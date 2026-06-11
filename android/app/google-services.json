@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "11322166086",
+    "project_id": "tugasakhir-c156c",
+    "storage_bucket": "tugasakhir-c156c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:11322166086:android:6f6c304ae4712fd132b347",
+        "android_client_info": {
+          "package_name": "com.tugasakhir"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAuZk4QgNRvK5ntrAbLaERA9lTS_T41n6w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
