@@ -75,9 +75,9 @@ const SplashScreen = ({navigation}) => {
         </View>
 
         {/* Nama aplikasi */}
-        <Text style={styles.appName}>Pendataan Pemakaman</Text>
+        <Text style={styles.appName}>Pendaftaran Pemakaman</Text>
         <Text style={styles.tagline}>
-          Kelola data makam dengan rapi, cepat, dan terpusat.
+          Kelola pendaftaran makam dengan rapi, cepat, dan terpusat.
         </Text>
 
         {/* Loading */}

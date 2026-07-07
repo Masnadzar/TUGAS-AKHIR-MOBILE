@@ -126,7 +126,7 @@ const Login = ({navigation}) => {
           source={require('../assets/logo.png')}
           style={{marginHorizontal: 105}}
         />
-        <Text style={styles.title}>Pendataan Pemakaman</Text>
+        <Text style={styles.title}>Pendaftaran Pemakaman</Text>
         <Text style={styles.subtitle}>Masuk sebagai User atau Admin</Text>
 
         <TextInput

@@ -12,7 +12,6 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 
@@ -21,128 +20,126 @@ const ProfileScreen = ({navigation}) => {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
 
-  // field profil
+  // ── Data dari Firestore (semua field dari Register) ─────────────
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [cemeteryName, setCemeteryName] = useState('');
-  const [role, setRole] = useState('user');
   const [email, setEmail] = useState('');
+  const [role, setRole] = useState('user'); // tidak bisa diubah
+  const [nik, setNik] = useState('');
+  const [tglLahir, setTglLahir] = useState('');
+  const [alamat, setAlamat] = useState('');
+  const [hubungan, setHubungan] = useState('');
+  const [noTelepon, setNoTelepon] = useState(''); // bisa diubah
 
+  // ── Load data dari Firestore ────────────────────────────────────
   useEffect(() => {
     const currentUser = auth().currentUser;
-
     if (!currentUser) {
-      // kalau belum login, paksa kembali ke Login
-      navigation.reset({
-        index: 0,
-        routes: [{name: 'Login'}],
-      });
+      navigation.reset({index: 0, routes: [{name: 'Login'}]});
       return;
     }
-
     setEmail(currentUser.email || '');
 
-    const userDocRef = firestore().collection('users').doc(currentUser.uid);
+    const unsub = firestore()
+      .collection('users')
+      .doc(currentUser.uid)
+      .onSnapshot(
+        snap => {
+          if (snap.exists) {
+            const d = snap.data();
+            setName(d.name || '');
+            setRole(d.role || 'user');
+            setNik(d.nik || '');
+            setTglLahir(d.tglLahir || '');
+            setAlamat(d.alamat || '');
+            setHubungan(d.hubungan || '');
+            setNoTelepon(d.noTelepon || d.phone || '');
+          } else {
+            setName(currentUser.displayName || '');
+          }
+          setLoading(false);
+        },
+        err => {
+          console.log('[Profile] load error:', err);
+          Alert.alert('Error', 'Gagal memuat data profil');
+          setLoading(false);
+        },
+      );
 
-    const unsubscribe = userDocRef.onSnapshot(
-      docSnap => {
-        if (docSnap.exists) {
-          const data = docSnap.data();
-          setName(data.name || '');
-          setPhone(data.phone || '');
-          setCemeteryName(data.cemeteryName || '');
-          setRole(data.role || 'user');
-        } else {
-          // kalau dokumen belum ada, set nilai default
-          setName(currentUser.displayName || '');
-          setRole('user');
-        }
-        setLoading(false);
-      },
-      error => {
-        console.log('[Profile] load error:', error);
-        Alert.alert('Error', 'Gagal memuat data profil');
-        setLoading(false);
-      },
-    );
-
-    return () => unsubscribe();
+    return () => unsub();
   }, [navigation]);
 
+  // ── Auto-format tanggal ─────────────────────────────────────────
+  const formatTanggal = (text, setter) => {
+    let val = text.replace(/[^0-9]/g, '');
+    if (val.length > 2) val = val.slice(0, 2) + '-' + val.slice(2);
+    if (val.length > 5) val = val.slice(0, 5) + '-' + val.slice(5);
+    setter(val.slice(0, 10));
+  };
+
+  // ── Simpan perubahan ────────────────────────────────────────────
   const handleSave = async () => {
     const currentUser = auth().currentUser;
     if (!currentUser) return;
 
     if (!name.trim()) {
-      Alert.alert('Validasi', 'Nama tidak boleh kosong');
+      Alert.alert('Validasi', 'Nama tidak boleh kosong.');
+      return;
+    }
+    if (noTelepon.trim() && !/^\d{10,13}$/.test(noTelepon.trim())) {
+      Alert.alert('Validasi', 'No. telepon harus 10-13 digit angka.');
       return;
     }
 
     try {
       setSaving(true);
-      await firestore()
-        .collection('users')
-        .doc(currentUser.uid)
-        .set(
-          {
-            name: name.trim(),
-            phone: phone.trim(),
-            cemeteryName: cemeteryName.trim(),
-            role: role.trim() || 'user',
-            updatedAt: firestore.FieldValue.serverTimestamp(),
-          },
-          {merge: true},
-        );
+      await firestore().collection('users').doc(currentUser.uid).set(
+        {
+          name: name.trim(), // String — bisa diubah
+          noTelepon: noTelepon.trim(), // String — bisa diubah
+          alamat: alamat.trim(), // String — bisa diubah
+          hubungan: hubungan.trim(), // String — bisa diubah
+          // nik, tglLahir, role, email TIDAK diupdate (read-only)
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        },
+        {merge: true},
+      );
       setEditing(false);
-      Alert.alert('Sukses', 'Profil berhasil disimpan');
-    } catch (error) {
-      console.log('[Profile] save error:', error);
-      Alert.alert('Error', 'Terjadi kesalahan saat menyimpan profil');
+      Alert.alert('Sukses', 'Profil berhasil disimpan.');
+    } catch (err) {
+      console.log('[Profile] save error:', err);
+      Alert.alert('Error', 'Terjadi kesalahan saat menyimpan profil.');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await auth().signOut();
-      navigation.reset({
-        index: 0,
-        routes: [{name: 'Login'}],
-      });
-    } catch (error) {
-      console.log('[Profile] logout error:', error);
-      Alert.alert('Error', 'Gagal logout');
-    }
+  // ── Logout ──────────────────────────────────────────────────────
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Yakin ingin keluar?', [
+      {text: 'Batal', style: 'cancel'},
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await auth().signOut();
+            navigation.reset({index: 0, routes: [{name: 'Login'}]});
+          } catch (err) {
+            Alert.alert('Error', 'Gagal logout.');
+          }
+        },
+      },
+    ]);
   };
 
-  const renderRowReadOnly = (label, value) => (
-    <View style={styles.row}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value || '-'}</Text>
-    </View>
-  );
-
-  const renderRowInput = (label, value, onChangeText, placeholder) => (
-    <View style={styles.row}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        style={styles.input}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor="#a4b0be"
-      />
-    </View>
-  );
-
+  // ── Loading ─────────────────────────────────────────────────────
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar backgroundColor="#1e272e" barStyle="light-content" />
+        <StatusBar backgroundColor="#1a3c5e" barStyle="light-content" />
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#2ed573" />
-          <Text style={{color: '#f5f6fa', marginTop: 8}}>Memuat profil...</Text>
+          <ActivityIndicator size="large" color="#1e90ff" />
+          <Text style={{color: '#fff', marginTop: 10}}>Memuat profil...</Text>
         </View>
       </SafeAreaView>
     );
@@ -153,101 +150,243 @@ const ProfileScreen = ({navigation}) => {
     (email && email.charAt(0).toUpperCase()) ||
     'U';
 
+  const isAdmin = role === 'admin';
+  const roleLabel = isAdmin ? '🛡️  Administrator' : '👤  User';
+  const roleBg = isAdmin ? '#fff3cd' : '#e8f4fd';
+  const roleTxt = isAdmin ? '#856404' : '#1e90ff';
+
+  // ── Komponen baris tampilan (read-only) ─────────────────────────
+  const InfoRow = ({icon, label, value, locked}) => (
+    <View style={styles.infoRow}>
+      <View style={styles.infoIconBox}>
+        <Text style={styles.infoIcon}>{icon}</Text>
+      </View>
+      <View style={styles.infoContent}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={styles.infoValue}>{value || '-'}</Text>
+      </View>
+      {locked && <Text style={styles.lockIcon}>🔒</Text>}
+    </View>
+  );
+
+  // ── Komponen input edit ─────────────────────────────────────────
+  const EditRow = ({
+    icon,
+    label,
+    value,
+    onChangeText,
+    placeholder,
+    keyboardType,
+    maxLength,
+    multiline,
+    locked,
+  }) => (
+    <View style={styles.editRow}>
+      <Text style={styles.editLabel}>
+        {icon} {label} {locked ? '🔒' : ''}
+      </Text>
+      {locked ? (
+        <View style={styles.lockedInput}>
+          <Text style={styles.lockedInputTxt}>{value || '-'}</Text>
+        </View>
+      ) : (
+        <TextInput
+          style={[
+            styles.editInput,
+            multiline && {height: 75, textAlignVertical: 'top'},
+          ]}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor="#bbb"
+          keyboardType={keyboardType || 'default'}
+          maxLength={maxLength}
+          multiline={multiline}
+          editable={!locked}
+        />
+      )}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar backgroundColor="#1e272e" barStyle="light-content" />
+      <StatusBar backgroundColor="#1a3c5e" barStyle="light-content" />
       <ScrollView
         style={styles.container}
-        contentContainerStyle={{paddingBottom: 24}}>
-        {/* HEADER */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Profil</Text>
+        contentContainerStyle={{paddingBottom: 40}}>
+        {/* ══════════════════════════════════════
+            HERO HEADER
+        ══════════════════════════════════════ */}
+        <View style={styles.heroHeader}>
+          <View style={styles.heroBg} />
+          <View style={styles.avatarWrapper}>
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarLetter}>{initialLetter}</Text>
+            </View>
+            <View style={[styles.rolePill, {backgroundColor: roleBg}]}>
+              <Text style={[styles.rolePillTxt, {color: roleTxt}]}>
+                {roleLabel}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.heroName}>{name || 'Nama belum diisi'}</Text>
+          <Text style={styles.heroEmail}>{email}</Text>
         </View>
 
-        {/* CARD PROFIL */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initialLetter}</Text>
-          </View>
-          <Text style={styles.nameText}>{name || 'Nama belum diisi'}</Text>
-          <Text style={styles.roleText}>
-            {role === 'admin' ? 'Administrator' : 'User'}
-          </Text>
-          <Text style={styles.emailText}>{email}</Text>
-
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>
-              {cemeteryName || 'Belum ada nama pemakaman'}
+        {/* ══════════════════════════════════════
+            KARTU INFO / EDIT
+        ══════════════════════════════════════ */}
+        <View style={styles.mainCard}>
+          {/* ── Sub-judul section ── */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              {editing ? '✏️  Edit Profil' : '📋  Informasi Profil'}
             </Text>
+            <View style={styles.editModeTag}>
+              <Text
+                style={{
+                  color: editing ? '#1e90ff' : '#aaa',
+                  fontSize: 11,
+                  fontWeight: '600',
+                }}>
+                {editing ? 'MODE EDIT' : 'READ ONLY'}
+              </Text>
+            </View>
           </View>
 
-          <View style={styles.actionRow}>
-            {!editing ? (
-              <>
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={() => setEditing(true)}>
-                  <Text style={styles.primaryButtonText}>Edit Profil</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.secondaryButton}
-                  onPress={handleLogout}>
-                  <Text style={styles.secondaryButtonText}>Logout</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={handleSave}
-                  disabled={saving}>
-                  <Text style={styles.primaryButtonText}>
-                    {saving ? 'Menyimpan...' : 'Simpan'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.secondaryButton}
-                  onPress={() => setEditing(false)}
-                  disabled={saving}>
-                  <Text style={styles.secondaryButtonText}>Batal</Text>
-                </TouchableOpacity>
-              </>
-            )}
+          <View style={styles.divider} />
+
+          {!editing ? (
+            /* ════ VIEW MODE ════ */
+            <>
+              <Text style={styles.groupLabel}>Data Akun</Text>
+              <InfoRow icon="👤" label="Nama Lengkap" value={name} />
+              <InfoRow icon="📧" label="Email" value={email} locked />
+              <InfoRow icon="🛡️" label="Role" value={roleLabel} locked />
+
+              <View style={styles.divider} />
+              <Text style={styles.groupLabel}>Data Identitas</Text>
+              <InfoRow icon="🪪" label="NIK" value={nik} locked />
+              <InfoRow
+                icon="🎂"
+                label="Tanggal Lahir"
+                value={tglLahir}
+                locked
+              />
+
+              <View style={styles.divider} />
+              <Text style={styles.groupLabel}>Data Kontak & Alamat</Text>
+              <InfoRow icon="📞" label="No. Telepon" value={noTelepon} />
+              <InfoRow icon="🏠" label="Alamat" value={alamat} />
+              <InfoRow
+                icon="🤝"
+                label="Hubungan dgn Jenazah"
+                value={hubungan}
+              />
+            </>
+          ) : (
+            /* ════ EDIT MODE ════ */
+            <>
+              <Text style={styles.groupLabel}>Data Akun</Text>
+              <EditRow
+                icon="👤"
+                label="Nama Lengkap"
+                value={name}
+                onChangeText={setName}
+                placeholder="Nama lengkap kamu"
+              />
+              <EditRow icon="📧" label="Email" value={email} locked />
+              <EditRow
+                icon="🛡️"
+                label="Role"
+                value={isAdmin ? 'Administrator' : 'User'}
+                locked
+              />
+
+              <View style={styles.divider} />
+              <Text style={styles.groupLabel}>
+                Data Identitas (tidak bisa diubah)
+              </Text>
+              <EditRow icon="🪪" label="NIK" value={nik} locked />
+              <EditRow
+                icon="🎂"
+                label="Tanggal Lahir"
+                value={tglLahir}
+                locked
+              />
+
+              <View style={styles.divider} />
+              <Text style={styles.groupLabel}>Data Kontak & Alamat</Text>
+              <EditRow
+                icon="📞"
+                label="No. Telepon"
+                value={noTelepon}
+                onChangeText={setNoTelepon}
+                placeholder="08123456789"
+                keyboardType="phone-pad"
+                maxLength={13}
+              />
+              <EditRow
+                icon="🏠"
+                label="Alamat"
+                value={alamat}
+                onChangeText={setAlamat}
+                placeholder="Alamat lengkap kamu"
+                multiline
+              />
+              <EditRow
+                icon="🤝"
+                label="Hubungan dgn Jenazah"
+                value={hubungan}
+                onChangeText={setHubungan}
+                placeholder="Anak, Suami, Istri, Saudara"
+              />
+
+              <Text style={styles.editHint}>
+                🔒 = tidak bisa diubah setelah registrasi
+              </Text>
+            </>
+          )}
+        </View>
+
+        {/* ══════════════════════════════════════
+            TOMBOL AKSI
+        ══════════════════════════════════════ */}
+        {!editing ? (
+          <View style={styles.btnRow}>
+            <TouchableOpacity
+              style={styles.btnEdit}
+              onPress={() => setEditing(true)}>
+              <Text style={styles.btnEditTxt}>✏️ Edit Profil</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.btnLogout} onPress={handleLogout}>
+              <Text style={styles.btnLogoutTxt}>🚪 Logout</Text>
+            </TouchableOpacity>
           </View>
-        </View>
-
-        {/* DETAIL PROFIL */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Detail Akun</Text>
-
-          {editing
-            ? renderRowInput(
-                'Nama Lengkap',
-                name,
-                setName,
-                'Masukkan nama lengkap',
-              )
-            : renderRowReadOnly('Nama Lengkap', name)}
-
-          {renderRowReadOnly('Email', email)}
-
-          {editing
-            ? renderRowInput('No. HP', phone, setPhone, 'Masukkan nomor HP')
-            : renderRowReadOnly('No. HP', phone)}
-
-          {editing
-            ? renderRowInput(
-                'Nama Pemakaman',
-                cemeteryName,
-                setCemeteryName,
-                'Contoh: TPU Kota Sejahtera',
-              )
-            : renderRowReadOnly('Nama Pemakaman', cemeteryName)}
-
-          {editing
-            ? renderRowInput('Peran / Role', role, setRole, 'admin atau user')
-            : renderRowReadOnly('Peran / Role', role)}
-        </View>
+        ) : (
+          <View style={styles.btnRow}>
+            <TouchableOpacity
+              style={[styles.btnSave, saving && {opacity: 0.7}]}
+              onPress={handleSave}
+              disabled={saving}>
+              {saving ? (
+                <View
+                  style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+                  <ActivityIndicator color="#fff" size="small" />
+                  <Text style={styles.btnSaveTxt}>Menyimpan...</Text>
+                </View>
+              ) : (
+                <Text style={styles.btnSaveTxt}>💾 Simpan</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.btnCancel}
+              onPress={() => setEditing(false)}
+              disabled={saving}>
+              <Text style={styles.btnCancelTxt}>Batal</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -256,151 +395,168 @@ const ProfileScreen = ({navigation}) => {
 export default ProfileScreen;
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#1e272e',
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#E4EEF1FF',
-  },
+  safeArea: {flex: 1, backgroundColor: '#1a3c5e'},
+  container: {flex: 1, backgroundColor: '#f1f2f6'},
   center: {
     flex: 1,
-    backgroundColor: '#1e272e',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#1a3c5e',
   },
-  header: {
-    backgroundColor: '#1e272e',
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    marginBottom: 12,
-    elevation: 4,
-  },
-  headerTitle: {
-    color: '#f5f6fa',
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  profileCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 16,
-    marginTop: -36,
-    borderRadius: 16,
-    paddingTop: 40,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
-    elevation: 4,
+
+  // ── Hero Header ──
+  heroHeader: {
+    backgroundColor: '#1a3c5e',
+    paddingTop: 24,
+    paddingBottom: 36,
     alignItems: 'center',
   },
-  avatar: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#2f3542',
+  heroBg: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 36,
+    backgroundColor: '#f1f2f6',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+  },
+  avatarWrapper: {alignItems: 'center', marginBottom: 10},
+  avatarCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: '#2e6da4',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: -20,
+    borderWidth: 3,
+    borderColor: '#fff',
+    elevation: 6,
   },
-  avatarText: {
-    color: '#f5f6fa',
-    fontSize: 26,
-    fontWeight: 'bold',
-  },
-  nameText: {
-    marginTop: 10,
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2f3542',
-  },
-  roleText: {
-    fontSize: 13,
-    color: '#57606f',
-  },
-  emailText: {
-    fontSize: 12,
-    color: '#747d8c',
-    marginTop: 4,
-  },
-  badge: {
-    marginTop: 10,
-    backgroundColor: '#2ed57322',
-    paddingHorizontal: 12,
+  avatarLetter: {color: '#fff', fontSize: 34, fontWeight: 'bold'},
+  rolePill: {
+    marginTop: 8,
+    paddingHorizontal: 14,
     paddingVertical: 4,
     borderRadius: 20,
   },
-  badgeText: {
-    fontSize: 12,
-    color: '#2ed573',
-    fontWeight: '600',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    marginTop: 14,
-    width: '100%',
-  },
-  primaryButton: {
-    flex: 1,
-    backgroundColor: '#2ed573',
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginRight: 6,
-  },
-  secondaryButton: {
-    flex: 1,
-    backgroundColor: '#ff4757',
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginLeft: 6,
-  },
-  primaryButtonText: {
-    color: '#f5f6fa',
-    fontWeight: 'bold',
-  },
-  secondaryButtonText: {
-    color: '#f5f6fa',
-    fontWeight: 'bold',
-  },
-  section: {
-    marginTop: 16,
+  rolePillTxt: {fontSize: 12, fontWeight: 'bold'},
+  heroName: {color: '#fff', fontSize: 20, fontWeight: 'bold', marginTop: 4},
+  heroEmail: {color: '#a8c8e8', fontSize: 12, marginTop: 2, marginBottom: 16},
+
+  // ── Main Card ──
+  mainCard: {
+    backgroundColor: '#fff',
     marginHorizontal: 16,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 12,
-    elevation: 2,
+    marginTop: -16,
+    borderRadius: 16,
+    padding: 16,
+    elevation: 4,
+    marginBottom: 14,
   },
-  sectionTitle: {
-    fontSize: 15,
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sectionTitle: {fontSize: 15, fontWeight: 'bold', color: '#1a3c5e'},
+  editModeTag: {
+    backgroundColor: '#f0f4ff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  groupLabel: {
+    fontSize: 11,
     fontWeight: 'bold',
-    color: '#2f3542',
+    color: '#1e90ff',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginTop: 10,
     marginBottom: 6,
   },
-  row: {
-    marginTop: 8,
+  divider: {height: 1, backgroundColor: '#f0f0f0', marginVertical: 10},
+  editHint: {color: '#aaa', fontSize: 11, marginTop: 12, textAlign: 'center'},
+
+  // ── Info Row (view mode) ──
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f8f8f8',
   },
-  label: {
-    fontSize: 12,
-    color: '#747d8c',
-  },
-  value: {
-    fontSize: 14,
-    color: '#2f3542',
-    marginTop: 2,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#dcdde1',
+  infoIconBox: {width: 32, alignItems: 'center'},
+  infoIcon: {fontSize: 16},
+  infoContent: {flex: 1, marginLeft: 8},
+  infoLabel: {fontSize: 11, color: '#aaa'},
+  infoValue: {fontSize: 14, color: '#303030', fontWeight: '500', marginTop: 1},
+  lockIcon: {fontSize: 13, marginLeft: 6},
+
+  // ── Edit Row ──
+  editRow: {marginBottom: 10},
+  editLabel: {fontSize: 12, color: '#555', fontWeight: '600', marginBottom: 4},
+  editInput: {
+    backgroundColor: '#f8f9fa',
+    padding: 10,
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontSize: 14,
-    marginTop: 2,
-    backgroundColor: '#ffffff',
-    color: '#2f3542',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    fontSize: 13,
+    color: '#303030',
   },
+  lockedInput: {
+    backgroundColor: '#f0f0f0',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e8e8e8',
+  },
+  lockedInputTxt: {fontSize: 13, color: '#888'},
+
+  // ── Tombol ──
+  btnRow: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    gap: 10,
+    marginBottom: 16,
+  },
+  btnEdit: {
+    flex: 1,
+    backgroundColor: '#1e90ff',
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    elevation: 3,
+  },
+  btnEditTxt: {color: '#fff', fontWeight: 'bold', fontSize: 14},
+  btnLogout: {
+    flex: 1,
+    backgroundColor: '#ff4757',
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    elevation: 3,
+  },
+  btnLogoutTxt: {color: '#fff', fontWeight: 'bold', fontSize: 14},
+  btnSave: {
+    flex: 2,
+    backgroundColor: '#2ed573',
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    elevation: 3,
+  },
+  btnSaveTxt: {color: '#fff', fontWeight: 'bold', fontSize: 14},
+  btnCancel: {
+    flex: 1,
+    backgroundColor: '#fff',
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  btnCancelTxt: {color: '#555', fontWeight: 'bold', fontSize: 14},
 });
