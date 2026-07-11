@@ -1,9 +1,11 @@
 // src/Register.js
 // ─────────────────────────────────────────────────────────────
-// PERUBAHAN dari versi lama:
-// + state: nik, tglLahir, alamat, hubungan
-// + validasi: NIK 16 digit, format tanggal DD-MM-YYYY
-// + Firestore: menyimpan 4 field baru ke collection 'users'
+// PERUBAHAN dari versi sebelumnya:
+// + state: adminAlamat, adminNoTelepon — HANYA dipakai untuk role Admin
+// + Section "Data Kontak Admin" (Alamat & No. Telepon) muncul
+//   HANYA saat mendaftar sebagai Admin, agar datanya bisa
+//   langsung tampil & diedit lagi lewat ProfileScreen admin.
+// + Bagian User (NIK, Tanggal Lahir, Alamat, Hubungan) TIDAK diubah.
 // ─────────────────────────────────────────────────────────────
 import React, {useState} from 'react';
 import {
@@ -18,6 +20,7 @@ import {
 } from 'react-native';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import {validateTglLahir} from './utils/dateValidation';
 
 const Register = ({navigation}) => {
   // ── State lama (tidak diubah) ─────────────────────────────
@@ -27,35 +30,56 @@ const Register = ({navigation}) => {
   const [role, setRole] = useState('user');
   const [loading, setLoading] = useState(false);
 
-  // ── State baru ────────────────────────────────────────────
+  // ── State khusus User (tidak diubah) ──────────────────────
   const [nik, setNik] = useState('');
   const [tglLahir, setTglLahir] = useState(''); // DD-MM-YYYY
   const [alamat, setAlamat] = useState('');
   const [hubungan, setHubungan] = useState(''); // cth: Anak, Suami, Istri
 
+  // ── State khusus Admin (baru) ─────────────────────────────
+  const [adminAlamat, setAdminAlamat] = useState('');
+  const [adminNoTelepon, setAdminNoTelepon] = useState('');
+
+  const isAdmin = role === 'admin';
+
   const onRegister = async () => {
-    if (
-      !name.trim() ||
-      !email.trim() ||
-      !password.trim() ||
-      !nik.trim() ||
-      !tglLahir.trim() ||
-      !alamat.trim() ||
-      !hubungan.trim()
-    ) {
-      Alert.alert('Validasi', 'Semua field wajib diisi');
+    // ── Validasi dasar (semua role) ─────────────────────────
+    if (!name.trim() || !email.trim() || !password.trim()) {
+      Alert.alert('Validasi', 'Nama, email, dan password wajib diisi');
       return;
     }
-    if (!/^\d{16}$/.test(nik.trim())) {
-      Alert.alert('Validasi', 'NIK harus tepat 16 digit angka');
+    if (password.trim().length < 6) {
+      Alert.alert('Validasi', 'Password minimal 6 karakter');
       return;
     }
-    if (!/^\d{2}-\d{2}-\d{4}$/.test(tglLahir.trim())) {
-      Alert.alert(
-        'Validasi',
-        'Format tanggal lahir: DD-MM-YYYY\nContoh: 25-08-1990',
-      );
-      return;
+
+    if (!isAdmin) {
+      // ── Validasi khusus role "user" (tidak diubah) ─────────
+      if (
+        !nik.trim() ||
+        !tglLahir.trim() ||
+        !alamat.trim() ||
+        !hubungan.trim()
+      ) {
+        Alert.alert('Validasi', 'Semua field wajib diisi');
+        return;
+      }
+      if (!/^\d{16}$/.test(nik.trim())) {
+        Alert.alert('Validasi', 'NIK harus tepat 16 digit angka');
+        return;
+      }
+      const err = validateTglLahir(tglLahir);
+      if (err) return Alert.alert('Validasi', err);
+    } else {
+      // ── Validasi khusus role "admin" (baru) ────────────────
+      if (!adminAlamat.trim() || !adminNoTelepon.trim()) {
+        Alert.alert('Validasi', 'Alamat dan no. telepon wajib diisi');
+        return;
+      }
+      if (!/^\d{10,13}$/.test(adminNoTelepon.trim())) {
+        Alert.alert('Validasi', 'No. telepon harus 10-13 digit angka');
+        return;
+      }
     }
 
     try {
@@ -66,16 +90,24 @@ const Register = ({navigation}) => {
       );
       const uid = userCred.user.uid;
 
-      await firestore().collection('users').doc(uid).set({
-        name: name.trim(), // String
-        email: email.trim(), // String
-        role: role, // String: "user" atau "admin"
-        nik: nik.trim(), // String (16 digit)
-        tglLahir: tglLahir.trim(), // String "DD-MM-YYYY"
-        alamat: alamat.trim(), // String
-        hubungan: hubungan.trim(), // String
-        createdAt: firestore.FieldValue.serverTimestamp(), // Timestamp
-      });
+      // ── Payload Firestore ────────────────────────────────────
+      const payload = {
+        name: name.trim(),
+        email: email.trim(),
+        role: role, // "user" atau "admin"
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      };
+      if (!isAdmin) {
+        payload.nik = nik.trim();
+        payload.tglLahir = tglLahir.trim();
+        payload.alamat = alamat.trim();
+        payload.hubungan = hubungan.trim();
+      } else {
+        payload.alamat = adminAlamat.trim();
+        payload.noTelepon = adminNoTelepon.trim();
+      }
+
+      await firestore().collection('users').doc(uid).set(payload);
 
       Alert.alert('Sukses', 'Registrasi berhasil, silakan login');
       navigation.replace('Login');
@@ -129,50 +161,76 @@ const Register = ({navigation}) => {
           style={styles.input}
         />
 
-        <Text style={styles.sectionLabel}>Data Ahli Waris</Text>
-        <TextInput
-          value={nik}
-          onChangeText={setNik}
-          placeholder="NIK (16 digit angka)"
-          keyboardType="number-pad"
-          maxLength={16}
-          style={styles.input}
-        />
-        <TextInput
-          value={tglLahir}
-          onChangeText={text => {
-            let val = text.replace(/[^0-9]/g, '');
-            if (val.length > 2) val = val.slice(0, 2) + '-' + val.slice(2);
-            if (val.length > 5) val = val.slice(0, 5) + '-' + val.slice(5);
-            setTglLahir(val.slice(0, 10));
-          }}
-          placeholder="Tanggal Lahir (DD-MM-YYYY)"
-          keyboardType="number-pad"
-          maxLength={10}
-          style={styles.input}
-        />
-        <TextInput
-          value={alamat}
-          onChangeText={setAlamat}
-          placeholder="Alamat lengkap"
-          multiline
-          numberOfLines={3}
-          style={[styles.input, {height: 80, textAlignVertical: 'top'}]}
-        />
-        <TextInput
-          value={hubungan}
-          onChangeText={setHubungan}
-          placeholder="Hubungan dengan jenazah (cth: Anak, Suami, Istri)"
-          style={styles.input}
-        />
-
-        <Text style={[styles.sectionLabel, {marginTop: 12}]}>
+        <Text style={[styles.sectionLabel, {marginTop: 4}]}>
           Daftar sebagai:
         </Text>
         <View style={styles.roleRow}>
           <RoleButton label="User" value="user" />
           <RoleButton label="Admin" value="admin" />
         </View>
+
+        {!isAdmin ? (
+          <>
+            <Text style={styles.sectionLabel}>Data Ahli Waris</Text>
+            <TextInput
+              value={nik}
+              onChangeText={setNik}
+              placeholder="NIK (16 digit angka)"
+              keyboardType="number-pad"
+              maxLength={16}
+              style={styles.input}
+            />
+            <TextInput
+              value={tglLahir}
+              onChangeText={text => {
+                let val = text.replace(/[^0-9]/g, '');
+                if (val.length > 2) val = val.slice(0, 2) + '-' + val.slice(2);
+                if (val.length > 5) val = val.slice(0, 5) + '-' + val.slice(5);
+                setTglLahir(val.slice(0, 10));
+              }}
+              placeholder="Tanggal Lahir (DD-MM-YYYY)"
+              keyboardType="number-pad"
+              maxLength={10}
+              style={styles.input}
+            />
+            <TextInput
+              value={alamat}
+              onChangeText={setAlamat}
+              placeholder="Alamat lengkap"
+              multiline
+              numberOfLines={3}
+              style={[styles.input, {height: 80, textAlignVertical: 'top'}]}
+            />
+            <TextInput
+              value={hubungan}
+              onChangeText={setHubungan}
+              placeholder="Hubungan dengan jenazah (cth: Anak, Suami, Istri)"
+              style={styles.input}
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.sectionLabel}>Data Kontak Admin</Text>
+            <TextInput
+              value={adminNoTelepon}
+              onChangeText={text =>
+                setAdminNoTelepon(text.replace(/[^0-9]/g, ''))
+              }
+              placeholder="No. Telepon Admin"
+              keyboardType="phone-pad"
+              maxLength={13}
+              style={styles.input}
+            />
+            <TextInput
+              value={adminAlamat}
+              onChangeText={setAdminAlamat}
+              placeholder="Alamat lengkap"
+              multiline
+              numberOfLines={3}
+              style={[styles.input, {height: 80, textAlignVertical: 'top'}]}
+            />
+          </>
+        )}
 
         <TouchableOpacity
           style={styles.button}

@@ -1,4 +1,4 @@
-// src/screens/UserProfileScreen.js
+// src/screens/ProfileScreen.js
 import React, {useEffect, useState} from 'react';
 import {
   SafeAreaView,
@@ -15,19 +15,78 @@ import {
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 
-const ProfileUserScreen = ({navigation}) => {
+// ── Komponen baris tampilan (read-only) ───────────────────────────
+// Didefinisikan di LUAR ProfileScreen supaya tidak dibuat ulang tiap
+// kali ProfileScreen re-render (state berubah tiap ketikan). Kalau
+// didefinisikan di dalam, React menganggapnya komponen baru setiap
+// render sehingga TextInput di dalamnya kehilangan fokus tiap huruf.
+const InfoRow = ({label, value, locked}) => (
+  <View style={styles.infoRow}>
+    <View style={styles.infoContent}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value || '-'}</Text>
+    </View>
+    {locked && <Text style={styles.lockTag}>Terkunci</Text>}
+  </View>
+);
+
+// ── Komponen input edit (juga di luar, dengan alasan yang sama) ───
+const EditRow = ({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType,
+  maxLength,
+  multiline,
+  locked,
+}) => (
+  <View style={styles.editRow}>
+    <View style={styles.editLabelRow}>
+      <Text style={styles.editLabel}>{label}</Text>
+      {locked && <Text style={styles.lockTag}>Terkunci</Text>}
+    </View>
+    {locked ? (
+      <View style={styles.lockedInput}>
+        <Text style={styles.lockedInputTxt}>{value || '-'}</Text>
+      </View>
+    ) : (
+      <TextInput
+        style={[
+          styles.editInput,
+          multiline && {height: 80, textAlignVertical: 'top'},
+        ]}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#b0b0b0"
+        keyboardType={keyboardType || 'default'}
+        maxLength={maxLength}
+        multiline={multiline}
+        editable={!locked}
+      />
+    )}
+  </View>
+);
+
+const ProfileScreen = ({navigation}) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
 
-  // ── Semua field dari Register ───────────────────────────────────
+  // ── Data akun (semua role) ────────────────────────────────────
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [nik, setNik] = useState(''); // 🔒 tidak bisa diubah
-  const [tglLahir, setTglLahir] = useState(''); // 🔒 tidak bisa diubah
-  const [alamat, setAlamat] = useState(''); // ✅ bisa diubah
-  const [hubungan, setHubungan] = useState(''); // ✅ bisa diubah
-  const [noTelepon, setNoTelepon] = useState(''); // ✅ bisa diubah
+  const [role, setRole] = useState('user'); // tidak bisa diubah
+
+  // ── Data khusus User: nik & tglLahir dari Register (terkunci) ──
+  const [nik, setNik] = useState('');
+  const [tglLahir, setTglLahir] = useState('');
+  const [hubungan, setHubungan] = useState(''); // bisa diubah
+
+  // ── Data kontak: dipakai User (alamat saja) & Admin (alamat + no telepon) ──
+  const [alamat, setAlamat] = useState('');
+  const [noTelepon, setNoTelepon] = useState(''); // No. Telepon Admin — bisa diubah
 
   // ── Load data dari Firestore ────────────────────────────────────
   useEffect(() => {
@@ -46,10 +105,11 @@ const ProfileUserScreen = ({navigation}) => {
           if (snap.exists) {
             const d = snap.data();
             setName(d.name || '');
+            setRole(d.role || 'user');
             setNik(d.nik || '');
             setTglLahir(d.tglLahir || '');
-            setAlamat(d.alamat || '');
             setHubungan(d.hubungan || '');
+            setAlamat(d.alamat || '');
             setNoTelepon(d.noTelepon || d.phone || '');
           } else {
             setName(currentUser.displayName || '');
@@ -57,8 +117,8 @@ const ProfileUserScreen = ({navigation}) => {
           setLoading(false);
         },
         err => {
-          console.log('[UserProfile] error:', err);
-          Alert.alert('Error', 'Gagal memuat profil');
+          console.log('[Profile] load error:', err);
+          Alert.alert('Error', 'Gagal memuat data profil');
           setLoading(false);
         },
       );
@@ -66,7 +126,9 @@ const ProfileUserScreen = ({navigation}) => {
     return () => unsub();
   }, [navigation]);
 
-  // ── Simpan — hanya field yang boleh diubah ──────────────────────
+  const isAdmin = role === 'admin';
+
+  // ── Simpan perubahan ────────────────────────────────────────────
   const handleSave = async () => {
     const currentUser = auth().currentUser;
     if (!currentUser) return;
@@ -75,41 +137,97 @@ const ProfileUserScreen = ({navigation}) => {
       Alert.alert('Validasi', 'Nama tidak boleh kosong.');
       return;
     }
-    if (noTelepon.trim() && !/^\d{10,13}$/.test(noTelepon.trim())) {
-      Alert.alert(
-        'Validasi',
-        'No. telepon harus 10–13 digit angka.\nContoh: 08123456789',
-      );
-      return;
+
+    if (isAdmin) {
+      if (!alamat.trim() || !noTelepon.trim()) {
+        Alert.alert('Validasi', 'Alamat dan no. telepon wajib diisi.');
+        return;
+      }
+      if (!/^\d{10,13}$/.test(noTelepon.trim())) {
+        Alert.alert('Validasi', 'No. telepon harus 10-13 digit angka.');
+        return;
+      }
+    } else {
+      if (!alamat.trim() || !hubungan.trim()) {
+        Alert.alert('Validasi', 'Alamat dan hubungan wajib diisi.');
+        return;
+      }
     }
 
     try {
       setSaving(true);
-      // Hanya update field yang boleh diubah user
-      // NIK, tglLahir, role, email TIDAK dikirim → tetap aman
-      await firestore().collection('users').doc(currentUser.uid).set(
-        {
-          name: name.trim(), // String ✅
-          noTelepon: noTelepon.trim(), // String ✅
-          alamat: alamat.trim(), // String ✅
-          hubungan: hubungan.trim(), // String ✅
-          updatedAt: firestore.FieldValue.serverTimestamp(), // Timestamp
-        },
-        {merge: true},
-      );
+      const payload = {
+        name: name.trim(), // String — bisa diubah
+        alamat: alamat.trim(), // String — bisa diubah
+        // nik, tglLahir, role, email TIDAK diupdate (read-only)
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      };
+      if (isAdmin) {
+        payload.noTelepon = noTelepon.trim();
+      } else {
+        payload.hubungan = hubungan.trim();
+      }
+
+      await firestore()
+        .collection('users')
+        .doc(currentUser.uid)
+        .set(payload, {merge: true});
       setEditing(false);
       Alert.alert('Sukses', 'Profil berhasil disimpan.');
     } catch (err) {
-      console.log('[UserProfile] save error:', err);
-      Alert.alert('Error', 'Gagal menyimpan profil.');
+      console.log('[Profile] save error:', err);
+      Alert.alert('Error', 'Terjadi kesalahan saat menyimpan profil.');
     } finally {
       setSaving(false);
     }
   };
 
-  // ── Logout dengan konfirmasi ────────────────────────────────────
+  // ── Hapus data profil (opsional, tetap menjaga akun & login) ────
+  const handleDeleteData = () => {
+    const pesan = isAdmin
+      ? 'Data profil (nama, no. telepon, alamat) akan dikosongkan. Akun login kamu tidak akan terhapus. Lanjutkan?'
+      : 'Data profil (nama, alamat, hubungan) akan dikosongkan. Akun login kamu tidak akan terhapus. Lanjutkan?';
+
+    Alert.alert('Hapus Data Profil', pesan, [
+      {text: 'Batal', style: 'cancel'},
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          const currentUser = auth().currentUser;
+          if (!currentUser) return;
+          try {
+            setSaving(true);
+            const payload = {
+              name: '',
+              alamat: '',
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            };
+            if (isAdmin) {
+              payload.noTelepon = '';
+            } else {
+              payload.hubungan = '';
+            }
+            await firestore()
+              .collection('users')
+              .doc(currentUser.uid)
+              .set(payload, {merge: true});
+            setEditing(false);
+            Alert.alert('Sukses', 'Data profil berhasil dihapus.');
+          } catch (err) {
+            console.log('[Profile] delete error:', err);
+            Alert.alert('Error', 'Gagal menghapus data profil.');
+          } finally {
+            setSaving(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  // ── Logout ──────────────────────────────────────────────────────
   const handleLogout = () => {
-    Alert.alert('Logout', 'Yakin ingin keluar dari akun?', [
+    Alert.alert('Logout', 'Yakin ingin keluar?', [
       {text: 'Batal', style: 'cancel'},
       {
         text: 'Logout',
@@ -126,158 +244,64 @@ const ProfileUserScreen = ({navigation}) => {
     ]);
   };
 
-  // ── Loading screen ──────────────────────────────────────────────
+  // ── Loading ─────────────────────────────────────────────────────
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar backgroundColor="#07575b" barStyle="light-content" />
+        <StatusBar backgroundColor="#1a3c5e" barStyle="light-content" />
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#2ed573" />
-          <Text style={{color: '#fff', marginTop: 10, fontSize: 14}}>
-            Memuat profil...
-          </Text>
+          <ActivityIndicator size="large" color="#1e90ff" />
+          <Text style={{color: '#fff', marginTop: 10}}>Memuat profil...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  const initial =
+  const initialLetter =
     (name && name.charAt(0).toUpperCase()) ||
     (email && email.charAt(0).toUpperCase()) ||
     'U';
 
-  // ── Sub-komponen: baris info (view mode) ────────────────────────
-  const InfoRow = ({icon, label, value, locked}) => (
-    <View style={styles.infoRow}>
-      <View style={styles.infoIconBox}>
-        <Text style={styles.infoIcon}>{icon}</Text>
-      </View>
-      <View style={styles.infoContent}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value || '-'}</Text>
-      </View>
-      {locked && <Text style={styles.lockBadge}>🔒</Text>}
-    </View>
-  );
+  const roleLabel = isAdmin ? 'Administrator' : 'User';
+  const roleBg = isAdmin ? '#fff3cd' : '#e8f4fd';
+  const roleTxt = isAdmin ? '#8a6d1e' : '#1e6fbf';
 
-  // ── Sub-komponen: input edit ────────────────────────────────────
-  const EditRow = ({
-    icon,
-    label,
-    value,
-    onChangeText,
-    placeholder,
-    keyboardType,
-    maxLength,
-    multiline,
-    locked,
-  }) => (
-    <View style={styles.editRowWrap}>
-      <View style={styles.editLabelRow}>
-        <Text style={styles.editIcon}>{icon}</Text>
-        <Text style={styles.editLabel}>{label}</Text>
-        {locked && (
-          <View style={styles.lockedTag}>
-            <Text style={styles.lockedTagTxt}>Tidak bisa diubah</Text>
-          </View>
-        )}
-      </View>
-      {locked ? (
-        <View style={styles.lockedBox}>
-          <Text style={styles.lockedBoxTxt}>{value || '-'}</Text>
-        </View>
-      ) : (
-        <TextInput
-          style={[
-            styles.editInput,
-            multiline && {height: 75, textAlignVertical: 'top'},
-          ]}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor="#bbb"
-          keyboardType={keyboardType || 'default'}
-          maxLength={maxLength}
-          multiline={multiline}
-        />
-      )}
-    </View>
-  );
-
-  // ── Render utama ────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar backgroundColor="#07575b" barStyle="light-content" />
+      <StatusBar backgroundColor="#1a3c5e" barStyle="light-content" />
       <ScrollView
         style={styles.container}
-        contentContainerStyle={{paddingBottom: 44}}>
-        {/* ══════════════════════════════════════
-            HERO HEADER — Avatar + Nama + Email
-        ══════════════════════════════════════ */}
-        <View style={styles.heroSection}>
-          {/* Gelombang bawah hero */}
-          <View style={styles.heroWave} />
-
-          {/* Avatar */}
-          <View style={styles.avatarOuter}>
-            <View style={styles.avatarInner}>
-              <Text style={styles.avatarLetter}>{initial}</Text>
+        contentContainerStyle={{paddingBottom: 40}}>
+        {/* HERO HEADER */}
+        <View style={styles.heroHeader}>
+          <View style={styles.heroBg} />
+          <View style={styles.avatarWrapper}>
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarLetter}>{initialLetter}</Text>
+            </View>
+            <View style={[styles.rolePill, {backgroundColor: roleBg}]}>
+              <Text style={[styles.rolePillTxt, {color: roleTxt}]}>
+                {roleLabel}
+              </Text>
             </View>
           </View>
-
-          {/* Badge Role */}
-          <View style={styles.userRolePill}>
-            <Text style={styles.userRoleTxt}>👤 Pengguna</Text>
-          </View>
-
           <Text style={styles.heroName}>{name || 'Nama belum diisi'}</Text>
           <Text style={styles.heroEmail}>{email}</Text>
-
-          {/* Statistik singkat */}
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statIcon}>🪪</Text>
-              <Text style={styles.statLabel}>NIK</Text>
-              <Text style={styles.statValue} numberOfLines={1}>
-                {nik ? nik.slice(0, 6) + '••••••••••' : '-'}
-              </Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statIcon}>🎂</Text>
-              <Text style={styles.statLabel}>Tgl Lahir</Text>
-              <Text style={styles.statValue}>{tglLahir || '-'}</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statIcon}>🤝</Text>
-              <Text style={styles.statLabel}>Hubungan</Text>
-              <Text style={styles.statValue} numberOfLines={1}>
-                {hubungan || '-'}
-              </Text>
-            </View>
-          </View>
         </View>
 
-        {/* ══════════════════════════════════════
-            KARTU UTAMA — INFO / EDIT
-        ══════════════════════════════════════ */}
+        {/* KARTU INFO / EDIT */}
         <View style={styles.mainCard}>
-          {/* Header kartu */}
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardHeaderTxt}>
-              {editing ? '✏️  Edit Profil' : '📋  Detail Profil'}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              {editing ? 'Edit Profil' : 'Informasi Profil'}
             </Text>
-            <View
-              style={[
-                styles.modePill,
-                {backgroundColor: editing ? '#e8f4fd' : '#f0f0f0'},
-              ]}>
+            <View style={styles.editModeTag}>
               <Text
-                style={[
-                  styles.modePillTxt,
-                  {color: editing ? '#1e90ff' : '#aaa'},
-                ]}>
+                style={{
+                  color: editing ? '#1e90ff' : '#999',
+                  fontSize: 11,
+                  fontWeight: '600',
+                }}>
                 {editing ? 'MODE EDIT' : 'READ ONLY'}
               </Text>
             </View>
@@ -285,113 +309,125 @@ const ProfileUserScreen = ({navigation}) => {
 
           <View style={styles.divider} />
 
-          {/* ── VIEW MODE ── */}
           {!editing ? (
+            /* ════ VIEW MODE ════ */
             <>
-              <Text style={styles.groupLabel}>DATA AKUN</Text>
-              <InfoRow icon="👤" label="Nama Lengkap" value={name} />
-              <InfoRow icon="📧" label="Email" value={email} locked />
-              <InfoRow icon="🛡️" label="Role" value="Pengguna" locked />
+              <Text style={styles.groupLabel}>Data Akun</Text>
+              <InfoRow label="Nama Lengkap" value={name} />
+              <InfoRow label="Email" value={email} locked />
+              <InfoRow label="Role" value={roleLabel} locked />
 
-              <View style={styles.divider} />
-              <Text style={styles.groupLabel}>
-                IDENTITAS (TIDAK BISA DIUBAH)
-              </Text>
-              <InfoRow icon="🪪" label="NIK" value={nik} locked />
-              <InfoRow
-                icon="🎂"
-                label="Tanggal Lahir"
-                value={tglLahir}
-                locked
-              />
+              {isAdmin ? (
+                <>
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>Data Kontak Admin</Text>
+                  <InfoRow label="No. Telepon Admin" value={noTelepon} />
+                  <InfoRow label="Alamat" value={alamat} />
+                </>
+              ) : (
+                <>
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>Data Identitas</Text>
+                  <InfoRow label="NIK" value={nik} locked />
+                  <InfoRow label="Tanggal Lahir" value={tglLahir} locked />
 
-              <View style={styles.divider} />
-              <Text style={styles.groupLabel}>KONTAK & ALAMAT</Text>
-              <InfoRow icon="📞" label="No. Telepon" value={noTelepon} />
-              <InfoRow icon="🏠" label="Alamat" value={alamat} />
-              <InfoRow
-                icon="🤝"
-                label="Hubungan dgn Jenazah"
-                value={hubungan}
-              />
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>Data Kontak & Alamat</Text>
+                  <InfoRow label="Alamat" value={alamat} />
+                  <InfoRow label="Hubungan dengan Jenazah" value={hubungan} />
+                </>
+              )}
             </>
           ) : (
-            /* ── EDIT MODE ── */
+            /* ════ EDIT MODE ════ */
             <>
-              <Text style={styles.groupLabel}>DATA AKUN</Text>
+              <Text style={styles.groupLabel}>Data Akun</Text>
               <EditRow
-                icon="👤"
                 label="Nama Lengkap"
                 value={name}
                 onChangeText={setName}
                 placeholder="Nama lengkap kamu"
               />
-              <EditRow icon="📧" label="Email" value={email} locked />
-              <EditRow icon="🛡️" label="Role" value="Pengguna" locked />
-
-              <View style={styles.divider} />
-              <Text style={styles.groupLabel}>
-                IDENTITAS (TIDAK BISA DIUBAH)
-              </Text>
-              <EditRow icon="🪪" label="NIK" value={nik} locked />
+              <EditRow label="Email" value={email} locked />
               <EditRow
-                icon="🎂"
-                label="Tanggal Lahir"
-                value={tglLahir}
+                label="Role"
+                value={isAdmin ? 'Administrator' : 'User'}
                 locked
               />
 
-              <View style={styles.divider} />
-              <Text style={styles.groupLabel}>KONTAK & ALAMAT</Text>
-              <EditRow
-                icon="📞"
-                label="No. Telepon"
-                value={noTelepon}
-                onChangeText={setNoTelepon}
-                placeholder="08123456789"
-                keyboardType="phone-pad"
-                maxLength={13}
-              />
-              <EditRow
-                icon="🏠"
-                label="Alamat"
-                value={alamat}
-                onChangeText={setAlamat}
-                placeholder="Alamat lengkap kamu"
-                multiline
-              />
-              <EditRow
-                icon="🤝"
-                label="Hubungan dgn Jenazah"
-                value={hubungan}
-                onChangeText={setHubungan}
-                placeholder="Anak, Suami, Istri, Saudara"
-              />
+              {isAdmin ? (
+                <>
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>Data Kontak Admin</Text>
+                  <EditRow
+                    label="No. Telepon Admin"
+                    value={noTelepon}
+                    onChangeText={setNoTelepon}
+                    placeholder="08123456789"
+                    keyboardType="phone-pad"
+                    maxLength={13}
+                  />
+                  <EditRow
+                    label="Alamat"
+                    value={alamat}
+                    onChangeText={setAlamat}
+                    placeholder="Alamat lengkap kamu"
+                    multiline
+                  />
+                </>
+              ) : (
+                <>
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>
+                    Data Identitas (tidak bisa diubah)
+                  </Text>
+                  <EditRow label="NIK" value={nik} locked />
+                  <EditRow label="Tanggal Lahir" value={tglLahir} locked />
 
-              <View style={styles.hintBox}>
-                <Text style={styles.hintTxt}>
-                  🔒 NIK, Tanggal Lahir, Email, dan Role tidak bisa diubah
-                  setelah registrasi.
-                </Text>
-              </View>
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>Data Kontak & Alamat</Text>
+                  <EditRow
+                    label="Alamat"
+                    value={alamat}
+                    onChangeText={setAlamat}
+                    placeholder="Alamat lengkap kamu"
+                    multiline
+                  />
+                  <EditRow
+                    label="Hubungan dengan Jenazah"
+                    value={hubungan}
+                    onChangeText={setHubungan}
+                    placeholder="Anak, Suami, Istri, Saudara"
+                  />
+                </>
+              )}
+
+              <Text style={styles.editHint}>
+                Kolom bertanda "Terkunci" tidak bisa diubah setelah registrasi
+              </Text>
             </>
           )}
         </View>
 
-        {/* ══════════════════════════════════════
-            TOMBOL AKSI
-        ══════════════════════════════════════ */}
+        {/* TOMBOL AKSI */}
         {!editing ? (
-          <View style={styles.btnRow}>
+          <>
+            <View style={styles.btnRow}>
+              <TouchableOpacity
+                style={styles.btnEdit}
+                onPress={() => setEditing(true)}>
+                <Text style={styles.btnEditTxt}>Edit Profil</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnLogout} onPress={handleLogout}>
+                <Text style={styles.btnLogoutTxt}>Logout</Text>
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
-              style={styles.btnEdit}
-              onPress={() => setEditing(true)}>
-              <Text style={styles.btnEditTxt}>✏️ Edit Profil</Text>
+              style={styles.btnDeleteData}
+              onPress={handleDeleteData}>
+              <Text style={styles.btnDeleteDataTxt}>Hapus Data Profil</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.btnLogout} onPress={handleLogout}>
-              <Text style={styles.btnLogoutTxt}>🚪 Logout</Text>
-            </TouchableOpacity>
-          </View>
+          </>
         ) : (
           <View style={styles.btnRow}>
             <TouchableOpacity
@@ -405,7 +441,7 @@ const ProfileUserScreen = ({navigation}) => {
                   <Text style={styles.btnSaveTxt}>Menyimpan...</Text>
                 </View>
               ) : (
-                <Text style={styles.btnSaveTxt}>💾 Simpan Perubahan</Text>
+                <Text style={styles.btnSaveTxt}>Simpan</Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity
@@ -421,133 +457,94 @@ const ProfileUserScreen = ({navigation}) => {
   );
 };
 
-export default ProfileUserScreen;
-
-const TEAL = '#07575b';
-const TEAL_LIGHT = '#0a7377';
+export default ProfileScreen;
 
 const styles = StyleSheet.create({
-  safeArea: {flex: 1, backgroundColor: TEAL},
+  safeArea: {flex: 1, backgroundColor: '#1a3c5e'},
   container: {flex: 1, backgroundColor: '#f1f2f6'},
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: TEAL,
+    backgroundColor: '#1a3c5e',
   },
 
-  // ── Hero ──────────────────────────────────────────────────────────
-  heroSection: {
-    backgroundColor: TEAL,
-    paddingTop: 20,
-    paddingBottom: 50,
+  // ── Hero Header ──
+  heroHeader: {
+    backgroundColor: '#1a3c5e',
+    paddingTop: 24,
+    paddingBottom: 36,
     alignItems: 'center',
-    paddingHorizontal: 16,
   },
-  heroWave: {
+  heroBg: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 40,
+    height: 36,
     backgroundColor: '#f1f2f6',
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
   },
-  avatarOuter: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  avatarInner: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    backgroundColor: TEAL_LIGHT,
+  avatarWrapper: {alignItems: 'center', marginBottom: 10},
+  avatarCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: '#2e6da4',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#fff',
-    elevation: 5,
+    elevation: 6,
   },
   avatarLetter: {color: '#fff', fontSize: 34, fontWeight: 'bold'},
-  userRolePill: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+  rolePill: {
+    marginTop: 8,
     paddingHorizontal: 14,
     paddingVertical: 4,
     borderRadius: 20,
-    marginBottom: 6,
   },
-  userRoleTxt: {color: '#fff', fontSize: 12, fontWeight: '600'},
-  heroName: {color: '#fff', fontSize: 20, fontWeight: 'bold'},
-  heroEmail: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 12,
-    marginTop: 2,
-    marginBottom: 14,
-  },
+  rolePillTxt: {fontSize: 12, fontWeight: 'bold'},
+  heroName: {color: '#fff', fontSize: 20, fontWeight: 'bold', marginTop: 4},
+  heroEmail: {color: '#a8c8e8', fontSize: 12, marginTop: 2, marginBottom: 16},
 
-  // ── Stats row ─────────────────────────────────────────────────────
-  statsRow: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    width: '100%',
-    marginBottom: 8,
-  },
-  statItem: {flex: 1, alignItems: 'center'},
-  statDivider: {
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    marginVertical: 4,
-  },
-  statIcon: {fontSize: 16, marginBottom: 2},
-  statLabel: {color: 'rgba(255,255,255,0.7)', fontSize: 9, fontWeight: '600'},
-  statValue: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: 'bold',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-
-  // ── Main card ─────────────────────────────────────────────────────
+  // ── Main Card ──
   mainCard: {
     backgroundColor: '#fff',
     marginHorizontal: 16,
     marginTop: -16,
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 16,
-    elevation: 5,
+    elevation: 4,
     marginBottom: 14,
   },
-  cardHeader: {
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
-  },
-  cardHeaderTxt: {fontSize: 15, fontWeight: 'bold', color: TEAL},
-  modePill: {paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10},
-  modePillTxt: {fontSize: 10, fontWeight: 'bold'},
-  groupLabel: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: TEAL,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    marginTop: 10,
     marginBottom: 8,
   },
+  sectionTitle: {fontSize: 15, fontWeight: 'bold', color: '#1a3c5e'},
+  editModeTag: {
+    backgroundColor: '#f0f4ff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  groupLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#1e90ff',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginTop: 10,
+    marginBottom: 6,
+  },
   divider: {height: 1, backgroundColor: '#f0f0f0', marginVertical: 10},
+  editHint: {color: '#aaa', fontSize: 11, marginTop: 12, textAlign: 'center'},
 
-  // ── Info row (view mode) ──────────────────────────────────────────
+  // ── Info Row (view mode) ──
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -555,72 +552,59 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f8f8f8',
   },
-  infoIconBox: {width: 30, alignItems: 'center'},
-  infoIcon: {fontSize: 16},
-  infoContent: {flex: 1, marginLeft: 10},
-  infoLabel: {
+  infoContent: {flex: 1},
+  infoLabel: {fontSize: 11, color: '#aaa'},
+  infoValue: {fontSize: 14, color: '#303030', fontWeight: '500', marginTop: 2},
+  lockTag: {
     fontSize: 10,
-    color: '#aaa',
-    fontWeight: '600',
-    textTransform: 'uppercase',
+    color: '#b08d2e',
+    backgroundColor: '#fdf3d8',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+    overflow: 'hidden',
   },
-  infoValue: {fontSize: 13, color: '#303030', fontWeight: '600', marginTop: 2},
-  lockBadge: {fontSize: 13, marginLeft: 6},
 
-  // ── Edit row ─────────────────────────────────────────────────────
-  editRowWrap: {marginBottom: 12},
+  // ── Edit Row ──
+  editRow: {marginBottom: 12},
   editLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 5,
-    gap: 6,
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
-  editIcon: {fontSize: 15},
-  editLabel: {fontSize: 12, color: '#555', fontWeight: '600', flex: 1},
-  lockedTag: {
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  lockedTagTxt: {fontSize: 9, color: '#aaa', fontWeight: '600'},
-  lockedBox: {
-    backgroundColor: '#f7f7f7',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ebebeb',
-  },
-  lockedBoxTxt: {fontSize: 13, color: '#aaa'},
+  editLabel: {fontSize: 12, color: '#555', fontWeight: '600'},
   editInput: {
     backgroundColor: '#f8f9fa',
-    padding: 10,
+    padding: 11,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e0e0e0',
     fontSize: 13,
     color: '#303030',
   },
-  hintBox: {
-    backgroundColor: '#f0f4ff',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 10,
+  lockedInput: {
+    backgroundColor: '#f0f0f0',
+    padding: 11,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e8e8e8',
   },
-  hintTxt: {color: '#6c87c7', fontSize: 11, lineHeight: 17},
+  lockedInputTxt: {fontSize: 13, color: '#888'},
 
-  // ── Tombol ───────────────────────────────────────────────────────
+  // ── Tombol ──
   btnRow: {
     flexDirection: 'row',
     marginHorizontal: 16,
     gap: 10,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   btnEdit: {
     flex: 1,
-    backgroundColor: TEAL,
+    backgroundColor: '#1e90ff',
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 10,
     alignItems: 'center',
     elevation: 3,
   },
@@ -629,16 +613,27 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ff4757',
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 10,
     alignItems: 'center',
     elevation: 3,
   },
   btnLogoutTxt: {color: '#fff', fontWeight: 'bold', fontSize: 14},
+  btnDeleteData: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ff4757',
+    backgroundColor: '#fff',
+  },
+  btnDeleteDataTxt: {color: '#ff4757', fontWeight: '600', fontSize: 13},
   btnSave: {
     flex: 2,
     backgroundColor: '#2ed573',
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 10,
     alignItems: 'center',
     elevation: 3,
   },
@@ -647,7 +642,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 10,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#ddd',

@@ -1,5 +1,5 @@
 // src/user/UserBurialForm.js
-import React, {useState} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,11 @@ import {
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import {launchImageLibrary} from 'react-native-image-picker';
+import {
+  validateTglLahir,
+  validateTglWafat,
+  validateBurialDate,
+} from '../utils/dateValidation';
 
 const CLOUD_NAME = 'dq59p6llb';
 const UPLOAD_PRESET = 'burial_upload';
@@ -20,6 +25,8 @@ const UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
 
 const uploadToCloudinary = async (fileObj, folder) => {
   if (!fileObj) return null;
+  // fileObj may already be an existing remote URL (string) if user didn't change it
+  if (typeof fileObj === 'string') return fileObj;
   const formData = new FormData();
   formData.append('file', {
     uri: fileObj.uri,
@@ -41,7 +48,11 @@ const uploadToCloudinary = async (fileObj, folder) => {
   return json.secure_url;
 };
 
-export default function UserBurialFormScreen({navigation}) {
+// route.params?.burialId → jika ada, form berjalan dalam mode EDIT (Update)
+export default function UserBurialFormScreen({navigation, route}) {
+  const burialId = route?.params?.burialId || null;
+  const isEditMode = !!burialId;
+
   // ── State: Data Jenazah ─────────────────────────────────────────
   const [deceasedName, setDeceasedName] = useState('');
   const [nikJenazah, setNikJenazah] = useState('');
@@ -54,9 +65,9 @@ export default function UserBurialFormScreen({navigation}) {
 
   // ── State: Data Ahli Waris ──────────────────────────────────────
   const [heirName, setHeirName] = useState('');
-  const [nikAhliWaris, setNikAhliWaris] = useState(''); // ← BARU
-  const [noTelepon, setNoTelepon] = useState(''); // ← BARU
-  const [hubungan, setHubungan] = useState(''); // ← BARU
+  const [nikAhliWaris, setNikAhliWaris] = useState('');
+  const [noTelepon, setNoTelepon] = useState('');
+  const [hubungan, setHubungan] = useState('');
   const [tglLahirWaris, setTglLahirWaris] = useState('');
   const [alamat, setAlamat] = useState('');
 
@@ -64,16 +75,66 @@ export default function UserBurialFormScreen({navigation}) {
   const [burialDate, setBurialDate] = useState('');
   const [notes, setNotes] = useState('');
 
-  // ── State: Dokumen ──────────────────────────────────────────────
+  // ── State: Dokumen (bisa berupa object baru {uri,name,type} ATAU string URL lama) ──
   const [dokKTP, setDokKTP] = useState(null);
   const [dokKK, setDokKK] = useState(null);
   const [dokAkte, setDokAkte] = useState(null);
   const [dokSuratKematian, setDokSuratKematian] = useState(null);
   const [dokSuratMedis, setDokSuratMedis] = useState(null);
 
+  // ── State: Status (khusus mode edit) ─────────────────────────────
+  const [status, setStatus] = useState('pending');
+
   // ── State: Loading ──────────────────────────────────────────────
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(isEditMode);
   const [uploadProgress, setUploadProgress] = useState('');
+
+  // ── READ: ambil data existing saat mode edit ────────────────────
+  const loadExistingData = useCallback(async () => {
+    if (!burialId) return;
+    try {
+      setFetching(true);
+      const doc = await firestore().collection('burials').doc(burialId).get();
+      if (!doc.exists) {
+        Alert.alert('Tidak ditemukan', 'Data pemakaman tidak ditemukan.');
+        navigation.goBack();
+        return;
+      }
+      const d = doc.data();
+      setDeceasedName(d.deceasedName || '');
+      setNikJenazah(d.nikJenazah || '');
+      setBinBinti(d.binBinti || '');
+      setJenisKelamin(d.jenisKelamin || 'Laki-laki');
+      setAgama(d.agama || 'Islam');
+      setTglLahirJenazah(d.tglLahirJenazah || '');
+      setTglWafat(d.tglWafat || '');
+      setPenyebabKematian(d.penyebabKematian || '');
+      setHeirName(d.heirName || '');
+      setNikAhliWaris(d.nikAhliWaris || '');
+      setNoTelepon(d.noTelepon || '');
+      setHubungan(d.hubungan || '');
+      setTglLahirWaris(d.tglLahirWaris || '');
+      setAlamat(d.alamat || '');
+      setBurialDate(d.burialDate || '');
+      setNotes(d.notes || '');
+      setDokKTP(d.dokKTP || null);
+      setDokKK(d.dokKK || null);
+      setDokAkte(d.dokAkte || null);
+      setDokSuratKematian(d.dokSuratKematian || null);
+      setDokSuratMedis(d.dokSuratMedis || null);
+      setStatus(d.status || 'pending');
+    } catch (err) {
+      console.log('[UserBurialForm] load err', err);
+      Alert.alert('Error', 'Gagal memuat data: ' + err.message);
+    } finally {
+      setFetching(false);
+    }
+  }, [burialId, navigation]);
+
+  useEffect(() => {
+    loadExistingData();
+  }, [loadExistingData]);
 
   // ── Auto-format tanggal DD-MM-YYYY saat ketik ───────────────────
   const formatTanggal = (text, setter) => {
@@ -105,69 +166,71 @@ export default function UserBurialFormScreen({navigation}) {
     );
   };
 
-  // ── Submit ──────────────────────────────────────────────────────
-  const handleSubmit = async () => {
-    // Validasi satu per satu agar pesan error spesifik
-    if (!deceasedName.trim())
-      return Alert.alert('Validasi', 'Nama jenazah wajib diisi.');
-    if (!nikJenazah.trim())
-      return Alert.alert('Validasi', 'NIK jenazah wajib diisi.');
+  const validateAll = () => {
+    if (!deceasedName.trim()) return 'Nama jenazah wajib diisi.';
+    if (!nikJenazah.trim()) return 'NIK jenazah wajib diisi.';
     if (!/^\d{16}$/.test(nikJenazah.trim()))
-      return Alert.alert('Validasi', 'NIK jenazah harus tepat 16 digit angka.');
-    if (!binBinti.trim())
-      return Alert.alert('Validasi', 'Bin/Binti wajib diisi.');
-    if (!agama.trim()) return Alert.alert('Validasi', 'Agama wajib diisi.');
-    if (!tglLahirJenazah.trim())
-      return Alert.alert('Validasi', 'Tanggal lahir jenazah wajib diisi.');
-    if (!/^\d{2}-\d{2}-\d{4}$/.test(tglLahirJenazah))
-      return Alert.alert(
-        'Validasi',
-        'Format Tgl Lahir: DD-MM-YYYY\nContoh: 10-05-1945',
-      );
-    if (!tglWafat.trim())
-      return Alert.alert('Validasi', 'Tanggal wafat wajib diisi.');
-    if (!/^\d{2}-\d{2}-\d{4}$/.test(tglWafat))
-      return Alert.alert(
-        'Validasi',
-        'Format Tgl Wafat: DD-MM-YYYY\nContoh: 05-12-2025',
-      );
-    if (!penyebabKematian.trim())
-      return Alert.alert('Validasi', 'Penyebab kematian wajib diisi.');
-
-    // Validasi data ahli waris
-    if (!heirName.trim())
-      return Alert.alert('Validasi', 'Nama ahli waris wajib diisi.');
-    if (!nikAhliWaris.trim())
-      return Alert.alert('Validasi', 'NIK ahli waris wajib diisi.');
+      return 'NIK jenazah harus tepat 16 digit angka.';
+    if (!binBinti.trim()) return 'Bin/Binti wajib diisi.';
+    if (!agama.trim()) return 'Agama wajib diisi.';
+    if (!tglLahirJenazah.trim()) return 'Tanggal lahir jenazah wajib diisi.';
+    {
+      const err = validateTglLahir(tglLahirJenazah);
+      if (err) return err;
+    }
+    if (!tglWafat.trim()) return 'Tanggal wafat wajib diisi.';
+    {
+      const err = validateTglWafat(tglWafat);
+      if (err) return err;
+    }
+    if (!penyebabKematian.trim()) return 'Penyebab kematian wajib diisi.';
+    if (!heirName.trim()) return 'Nama ahli waris wajib diisi.';
+    if (!nikAhliWaris.trim()) return 'NIK ahli waris wajib diisi.';
     if (!/^\d{16}$/.test(nikAhliWaris.trim()))
-      return Alert.alert(
-        'Validasi',
-        'NIK ahli waris harus tepat 16 digit angka.',
-      );
-    if (!noTelepon.trim())
-      return Alert.alert('Validasi', 'No. telepon ahli waris wajib diisi.');
+      return 'NIK ahli waris harus tepat 16 digit angka.';
+    if (!noTelepon.trim()) return 'No. telepon ahli waris wajib diisi.';
     if (!/^\d{10,13}$/.test(noTelepon.trim()))
-      return Alert.alert(
-        'Validasi',
-        'No. telepon harus 10-13 digit angka.\nContoh: 08123456789',
-      );
-    if (!hubungan.trim())
-      return Alert.alert('Validasi', 'Hubungan dengan jenazah wajib diisi.');
+      return 'No. telepon harus 10-13 digit angka.\nContoh: 08123456789';
+    if (!hubungan.trim()) return 'Hubungan dengan jenazah wajib diisi.';
     if (!/^\d{2}-\d{2}-\d{4}$/.test(tglLahirWaris))
-      return Alert.alert(
-        'Validasi',
-        'Format Tgl Lahir: DD-MM-YYYY\nContoh: 10-05-1945',
-      );
-    if (!alamat.trim()) return Alert.alert('Validasi', 'Alamat Saat ini.');
+      return 'Format Tgl Lahir: DD-MM-YYYY\nContoh: 10-05-1945';
+    if (!alamat.trim()) return 'Alamat Saat ini wajib diisi.';
+    if (!burialDate.trim()) return 'Tanggal pemakaman wajib diisi.';
+    {
+      const err = validateBurialDate(burialDate, tglWafat);
+      if (err) return err;
+    }
+    return null;
+  };
 
-    // Validasi tanggal pemakaman
-    if (!burialDate.trim())
-      return Alert.alert('Validasi', 'Tanggal pemakaman wajib diisi.');
-    if (!/^\d{2}-\d{2}-\d{4}$/.test(burialDate))
-      return Alert.alert(
-        'Validasi',
-        'Format Tgl Pemakaman: DD-MM-YYYY\nContoh: 06-12-2025',
-      );
+  const resetForm = () => {
+    setDeceasedName('');
+    setNikJenazah('');
+    setBinBinti('');
+    setJenisKelamin('Laki-laki');
+    setAgama('Islam');
+    setTglLahirJenazah('');
+    setTglWafat('');
+    setPenyebabKematian('');
+    setHeirName('');
+    setNikAhliWaris('');
+    setNoTelepon('');
+    setHubungan('');
+    setTglLahirWaris('');
+    setAlamat('');
+    setBurialDate('');
+    setNotes('');
+    setDokKTP(null);
+    setDokKK(null);
+    setDokAkte(null);
+    setDokSuratKematian(null);
+    setDokSuratMedis(null);
+  };
+
+  // ── CREATE / UPDATE ──────────────────────────────────────────────
+  const handleSubmit = async () => {
+    const validationError = validateAll();
+    if (validationError) return Alert.alert('Validasi', validationError);
 
     const user = auth().currentUser;
     if (!user) {
@@ -179,7 +242,6 @@ export default function UserBurialFormScreen({navigation}) {
     try {
       setLoading(true);
 
-      // STEP 1: Upload dokumen ke Cloudinary
       setUploadProgress('Mengupload dokumen...');
       const [urlKTP, urlKK, urlAkte, urlSuratKematian, urlSuratMedis] =
         await Promise.all([
@@ -190,87 +252,104 @@ export default function UserBurialFormScreen({navigation}) {
           uploadToCloudinary(dokSuratMedis, 'surat_medis'),
         ]);
 
-      // STEP 2: Simpan ke Firestore collection 'burials'
+      const payload = {
+        deceasedName: deceasedName.trim(),
+        nikJenazah: nikJenazah.trim(),
+        binBinti: binBinti.trim(),
+        jenisKelamin,
+        agama: agama.trim(),
+        tglLahirJenazah: tglLahirJenazah.trim(),
+        tglWafat: tglWafat.trim(),
+        penyebabKematian: penyebabKematian.trim(),
+
+        heirName: heirName.trim(),
+        nikAhliWaris: nikAhliWaris.trim(),
+        noTelepon: noTelepon.trim(),
+        hubungan: hubungan.trim(),
+        tglLahirWaris: tglLahirWaris.trim(),
+        alamat: alamat.trim(),
+
+        burialDate: burialDate.trim(),
+        notes: notes.trim(),
+
+        dokKTP: urlKTP || null,
+        dokKK: urlKK || null,
+        dokAkte: urlAkte || null,
+        dokSuratKematian: urlSuratKematian || null,
+        dokSuratMedis: urlSuratMedis || null,
+      };
+
       setUploadProgress('Menyimpan data...');
-      await firestore()
-        .collection('burials')
-        .add({
-          // ── Data Jenazah ──────────────────────────────
-          deceasedName: deceasedName.trim(), // String
-          nikJenazah: nikJenazah.trim(), // String (16 digit)
-          binBinti: binBinti.trim(), // String
-          jenisKelamin: jenisKelamin, // String: "Laki-laki"/"Perempuan"
-          agama: agama.trim(), // String
-          tglLahirJenazah: tglLahirJenazah.trim(), // String "DD-MM-YYYY"
-          tglWafat: tglWafat.trim(), // String "DD-MM-YYYY"
-          penyebabKematian: penyebabKematian.trim(), // String
 
-          // ── Data Ahli Waris ───────────────────────────
-          heirName: heirName.trim(), // String
-          nikAhliWaris: nikAhliWaris.trim(), // String (16 digit) ← BARU
-          noTelepon: noTelepon.trim(), // String ← BARU
-          hubungan: hubungan.trim(), // String ← BARU
-          tglLahirWaris: tglLahirWaris.trim(),
-          alamat: alamat.trim(),
-
-          // ── Data Pemakaman ────────────────────────────
-          burialDate: burialDate.trim(), // String "DD-MM-YYYY"
-          notes: notes.trim(), // String (boleh kosong)
-
-          // ── Dokumen (URL Cloudinary / null) ───────────
-          dokKTP: urlKTP || null, // String URL / null
-          dokKK: urlKK || null, // String URL / null
-          dokAkte: urlKK || null, // String URL / null
-          dokSuratKematian: urlSuratKematian || null, // String URL / null
-          dokSuratMedis: urlSuratMedis || null, // String URL / null
-
-          // ── Metadata & Status ─────────────────────────
-          createdBy: user.uid, // String (UID Firebase Auth)
-          createdAt: firestore.FieldValue.serverTimestamp(), // Timestamp
-          status: 'pending', // String: "pending"/"verified"/"rejected"
-          assignedBlock: null, // String / null → diisi admin
-          assignedGraveNumber: null, // String / null → diisi admin
-          adminNote: null, // String / null → diisi admin
-          verifiedBy: null, // String / null → UID admin
-          verifiedAt: null, // Timestamp / null
-        });
-
-      Alert.alert(
-        'Sukses',
-        'Data pemakaman berhasil dikirim!\nTunggu verifikasi admin.',
-      );
-
-      // Reset semua state
-      setDeceasedName('');
-      setNikJenazah('');
-      setBinBinti('');
-      setJenisKelamin('Laki-laki');
-      setAgama('Islam');
-      setTglLahirJenazah('');
-      setTglWafat('');
-      setPenyebabKematian('');
-      setHeirName('');
-      setNikAhliWaris('');
-      setNoTelepon('');
-      setHubungan('');
-      setTglLahirWaris('');
-      setAlamat('');
-      setBurialDate('');
-      setNotes('');
-      setDokKTP(null);
-      setDokKK(null);
-      setDokAkte(null);
-      setDokSuratKematian(null);
-      setDokSuratMedis(null);
+      if (isEditMode) {
+        await firestore()
+          .collection('burials')
+          .doc(burialId)
+          .update({
+            ...payload,
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+            updatedBy: user.uid,
+            // status kembali ke pending setelah diedit agar admin verifikasi ulang
+            status: 'pending',
+          });
+        Alert.alert('Sukses', 'Data pemakaman berhasil diperbarui.');
+      } else {
+        await firestore()
+          .collection('burials')
+          .add({
+            ...payload,
+            createdBy: user.uid,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+            status: 'pending',
+            assignedBlock: null,
+            assignedGraveNumber: null,
+            adminNote: null,
+            verifiedBy: null,
+            verifiedAt: null,
+          });
+        Alert.alert(
+          'Sukses',
+          'Data pemakaman berhasil dikirim!\nTunggu verifikasi admin.',
+        );
+        resetForm();
+      }
 
       navigation.navigate('UserBurialList');
     } catch (err) {
       console.log('[UserBurialForm] err', err);
-      Alert.alert('Error', 'Gagal mengirim data: ' + err.message);
+      Alert.alert('Error', 'Gagal menyimpan data: ' + err.message);
     } finally {
       setLoading(false);
       setUploadProgress('');
     }
+  };
+
+  // ── DELETE ────────────────────────────────────────────────────────
+  const handleDelete = () => {
+    if (!isEditMode) return;
+    Alert.alert(
+      'Hapus Data',
+      'Yakin ingin menghapus data pemakaman ini? Tindakan ini tidak dapat dibatalkan.',
+      [
+        {text: 'Batal', style: 'cancel'},
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              await firestore().collection('burials').doc(burialId).delete();
+              Alert.alert('Terhapus', 'Data pemakaman telah dihapus.');
+              navigation.navigate('UserBurialList');
+            } catch (err) {
+              Alert.alert('Error', 'Gagal menghapus data: ' + err.message);
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   // ── Tombol Jenis Kelamin ────────────────────────────────────────
@@ -286,26 +365,76 @@ export default function UserBurialFormScreen({navigation}) {
   );
 
   // ── Tombol Pilih Dokumen ────────────────────────────────────────
-  const DocBtn = ({label, file, onPress}) => (
-    <TouchableOpacity style={styles.docBtn} onPress={onPress}>
-      <Text style={styles.docBtnTxt}>
-        {file ? `✅  ${file.name}` : `📎  Pilih ${label}`}
-      </Text>
-    </TouchableOpacity>
-  );
+  const DocBtn = ({label, file, onPress}) => {
+    const hasFile = !!file;
+    const fileLabel =
+      typeof file === 'string' ? 'Dokumen tersimpan' : file?.name;
+    return (
+      <TouchableOpacity
+        style={[styles.docBtn, hasFile && styles.docBtnFilled]}
+        onPress={onPress}>
+        <View style={styles.docBtnRow}>
+          <View style={[styles.docDot, hasFile && styles.docDotFilled]} />
+          <Text style={[styles.docBtnTxt, hasFile && styles.docBtnTxtFilled]}>
+            {hasFile ? fileLabel : `Pilih ${label}`}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const statusLabel =
+    {
+      pending: 'Menunggu Verifikasi',
+      verified: 'Terverifikasi',
+      rejected: 'Ditolak',
+    }[status] || status;
+
+  const statusStyle =
+    {
+      pending: styles.statusPending,
+      verified: styles.statusVerified,
+      rejected: styles.statusRejected,
+    }[status] || styles.statusPending;
+
+  if (fetching) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#2f6fed" />
+        <Text style={styles.loadingScreenTxt}>Memuat data...</Text>
+      </View>
+    );
+  }
 
   // ── RENDER ──────────────────────────────────────────────────────
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={{padding: 16, paddingBottom: 50}}>
-      <Text style={styles.pageTitle}>Daftarkan Jenazah</Text>
+      <View style={styles.header}>
+        <Text style={styles.pageTitle}>
+          {isEditMode ? 'Edit Data Pemakaman' : 'Daftarkan Jenazah'}
+        </Text>
+        <Text style={styles.pageSubtitle}>
+          {isEditMode
+            ? 'Perbarui informasi yang telah dikirim sebelumnya'
+            : 'Lengkapi data berikut untuk pengajuan pemakaman'}
+        </Text>
+        {isEditMode && (
+          <View style={[styles.statusBadge, statusStyle]}>
+            <Text style={styles.statusBadgeTxt}>{statusLabel}</Text>
+          </View>
+        )}
+      </View>
 
       {/* ════════════════════════════════════════
           SECTION 1 — DATA JENAZAH
       ════════════════════════════════════════ */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>📋 Data Jenazah</Text>
+        <View style={styles.cardHeader}>
+          <View style={[styles.cardAccent, {backgroundColor: '#2f6fed'}]} />
+          <Text style={styles.cardTitle}>Data Jenazah</Text>
+        </View>
 
         <Text style={styles.label}>Nama Jenazah *</Text>
         <TextInput
@@ -313,6 +442,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={deceasedName}
           onChangeText={setDeceasedName}
           placeholder="Nama lengkap jenazah"
+          placeholderTextColor="#a3a9b7"
         />
 
         <Text style={styles.label}>NIK Jenazah * (16 digit)</Text>
@@ -321,6 +451,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={nikJenazah}
           onChangeText={setNikJenazah}
           placeholder="Contoh: 3175010101900001"
+          placeholderTextColor="#a3a9b7"
           keyboardType="number-pad"
           maxLength={16}
         />
@@ -331,6 +462,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={binBinti}
           onChangeText={setBinBinti}
           placeholder="cth: bin Ahmad  /  binti Siti"
+          placeholderTextColor="#a3a9b7"
         />
 
         <Text style={styles.label}>Jenis Kelamin *</Text>
@@ -345,6 +477,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={agama}
           onChangeText={setAgama}
           placeholder="Agama jenazah"
+          placeholderTextColor="#a3a9b7"
         />
 
         <Text style={styles.label}>Tanggal Lahir Jenazah * (DD-MM-YYYY)</Text>
@@ -353,6 +486,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={tglLahirJenazah}
           onChangeText={t => formatTanggal(t, setTglLahirJenazah)}
           placeholder="Contoh: 10-05-1945"
+          placeholderTextColor="#a3a9b7"
           keyboardType="number-pad"
           maxLength={10}
         />
@@ -363,6 +497,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={tglWafat}
           onChangeText={t => formatTanggal(t, setTglWafat)}
           placeholder="Contoh: 05-12-2025"
+          placeholderTextColor="#a3a9b7"
           keyboardType="number-pad"
           maxLength={10}
         />
@@ -373,6 +508,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={penyebabKematian}
           onChangeText={setPenyebabKematian}
           placeholder="Contoh: Sakit jantung"
+          placeholderTextColor="#a3a9b7"
         />
       </View>
 
@@ -380,7 +516,10 @@ export default function UserBurialFormScreen({navigation}) {
           SECTION 2 — DATA AHLI WARIS
       ════════════════════════════════════════ */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>👤 Data Ahli Waris</Text>
+        <View style={styles.cardHeader}>
+          <View style={[styles.cardAccent, {backgroundColor: '#12b886'}]} />
+          <Text style={styles.cardTitle}>Data Ahli Waris</Text>
+        </View>
 
         <Text style={styles.label}>Nama Ahli Waris *</Text>
         <TextInput
@@ -388,6 +527,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={heirName}
           onChangeText={setHeirName}
           placeholder="Nama lengkap ahli waris"
+          placeholderTextColor="#a3a9b7"
         />
 
         <Text style={styles.label}>NIK Ahli Waris * (16 digit)</Text>
@@ -396,6 +536,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={nikAhliWaris}
           onChangeText={setNikAhliWaris}
           placeholder="Contoh: 3175010101900002"
+          placeholderTextColor="#a3a9b7"
           keyboardType="number-pad"
           maxLength={16}
         />
@@ -406,6 +547,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={noTelepon}
           onChangeText={setNoTelepon}
           placeholder="Contoh: 08123456789"
+          placeholderTextColor="#a3a9b7"
           keyboardType="phone-pad"
           maxLength={13}
         />
@@ -416,6 +558,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={hubungan}
           onChangeText={setHubungan}
           placeholder="cth: Anak, Suami, Istri, Saudara"
+          placeholderTextColor="#a3a9b7"
         />
 
         <Text style={styles.label}>
@@ -426,6 +569,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={tglLahirWaris}
           onChangeText={t => formatTanggal(t, setTglLahirWaris)}
           placeholder="Contoh: 10-05-2021"
+          placeholderTextColor="#a3a9b7"
           keyboardType="number-pad"
           maxLength={10}
         />
@@ -434,7 +578,8 @@ export default function UserBurialFormScreen({navigation}) {
           style={[styles.input, {height: 80, textAlignVertical: 'top'}]}
           value={alamat}
           onChangeText={setAlamat}
-          placeholder="Alamat Saat ini"
+          placeholder="Alamat saat ini"
+          placeholderTextColor="#a3a9b7"
           multiline
         />
       </View>
@@ -443,7 +588,10 @@ export default function UserBurialFormScreen({navigation}) {
           SECTION 3 — DATA PEMAKAMAN
       ════════════════════════════════════════ */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>🕌 Data Pemakaman</Text>
+        <View style={styles.cardHeader}>
+          <View style={[styles.cardAccent, {backgroundColor: '#f59f00'}]} />
+          <Text style={styles.cardTitle}>Data Pemakaman</Text>
+        </View>
 
         <Text style={styles.label}>Tanggal Pemakaman * (DD-MM-YYYY)</Text>
         <TextInput
@@ -451,6 +599,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={burialDate}
           onChangeText={t => formatTanggal(t, setBurialDate)}
           placeholder="Contoh: 06-12-2025"
+          placeholderTextColor="#a3a9b7"
           keyboardType="number-pad"
           maxLength={10}
         />
@@ -461,6 +610,7 @@ export default function UserBurialFormScreen({navigation}) {
           value={notes}
           onChangeText={setNotes}
           placeholder="Catatan / patokan lokasi"
+          placeholderTextColor="#a3a9b7"
           multiline
         />
       </View>
@@ -469,9 +619,12 @@ export default function UserBurialFormScreen({navigation}) {
           SECTION 4 — UPLOAD DOKUMEN
       ════════════════════════════════════════ */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>📎 Dokumen Pendukung</Text>
+        <View style={styles.cardHeader}>
+          <View style={[styles.cardAccent, {backgroundColor: '#845ef7'}]} />
+          <Text style={styles.cardTitle}>Dokumen Pendukung</Text>
+        </View>
         <Text style={styles.docNote}>
-          Format: JPG / PNG • Foto dari galeri HP
+          Format JPG/PNG, diambil dari galeri HP. Ketuk untuk mengganti file.
         </Text>
 
         <Text style={styles.label}>KTP Ahli Waris</Text>
@@ -503,89 +656,156 @@ export default function UserBurialFormScreen({navigation}) {
       </View>
 
       {/* ════════════════════════════════════════
-          TOMBOL SUBMIT
+          TOMBOL AKSI — CREATE / UPDATE / DELETE
       ════════════════════════════════════════ */}
       <TouchableOpacity
         style={styles.submitBtn}
         onPress={handleSubmit}
         disabled={loading}>
         {loading ? (
-          <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+          <View style={styles.loadingRow}>
             <ActivityIndicator color="#fff" size="small" />
             <Text style={styles.submitTxt}>
               {uploadProgress || 'Memproses...'}
             </Text>
           </View>
         ) : (
-          <Text style={styles.submitTxt}>Kirim Data Pemakaman</Text>
+          <Text style={styles.submitTxt}>
+            {isEditMode ? 'Simpan Perubahan' : 'Kirim Data Pemakaman'}
+          </Text>
         )}
       </TouchableOpacity>
+
+      {isEditMode && (
+        <TouchableOpacity
+          style={styles.deleteBtn}
+          onPress={handleDelete}
+          disabled={loading}>
+          <Text style={styles.deleteBtnTxt}>Hapus Data</Text>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: '#f1f2f6'},
-  pageTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginVertical: 16,
-    color: '#303030',
+  container: {flex: 1, backgroundColor: '#f4f6fb'},
+  loadingScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f4f6fb',
   },
+  loadingScreenTxt: {marginTop: 12, color: '#6b7280', fontSize: 13},
+  header: {marginBottom: 18, marginTop: 8, paddingHorizontal: 2},
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1b1f27',
+  },
+  pageSubtitle: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  statusBadgeTxt: {fontSize: 11, fontWeight: '700', color: '#fff'},
+  statusPending: {backgroundColor: '#f59f00'},
+  statusVerified: {backgroundColor: '#12b886'},
+  statusRejected: {backgroundColor: '#e03131'},
   card: {
     backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 14,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
     elevation: 2,
   },
+  cardHeader: {flexDirection: 'row', alignItems: 'center', marginBottom: 12},
+  cardAccent: {width: 4, height: 18, borderRadius: 2, marginRight: 8},
   cardTitle: {
     fontSize: 15,
-    fontWeight: 'bold',
-    color: '#1e90ff',
-    marginBottom: 10,
+    fontWeight: '700',
+    color: '#1b1f27',
   },
-  label: {marginTop: 10, marginBottom: 4, color: '#555', fontSize: 13},
+  label: {
+    marginTop: 10,
+    marginBottom: 5,
+    color: '#5b6472',
+    fontSize: 12.5,
+    fontWeight: '500',
+  },
   input: {
-    backgroundColor: '#f8f9fa',
-    padding: 10,
-    borderRadius: 8,
+    backgroundColor: '#f8f9fb',
+    padding: 11,
+    borderRadius: 9,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: '#e4e7ee',
+    color: '#1b1f27',
+    fontSize: 14,
   },
   jkRow: {flexDirection: 'row', gap: 8, marginTop: 4},
   jkBtn: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 9,
     borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#f8f9fa',
+    borderColor: '#e4e7ee',
+    backgroundColor: '#f8f9fb',
     alignItems: 'center',
   },
-  jkBtnActive: {backgroundColor: '#1e90ff', borderColor: '#1e90ff'},
-  jkTxt: {color: '#373248', fontWeight: '500'},
-  jkTxtActive: {color: '#fff', fontWeight: 'bold'},
+  jkBtnActive: {backgroundColor: '#2f6fed', borderColor: '#2f6fed'},
+  jkTxt: {color: '#5b6472', fontWeight: '500', fontSize: 13.5},
+  jkTxtActive: {color: '#fff', fontWeight: '700'},
   docBtn: {
-    backgroundColor: '#f0f4ff',
+    backgroundColor: '#f8f9fb',
     borderWidth: 1,
-    borderColor: '#1e90ff',
-    borderStyle: 'dashed',
-    borderRadius: 8,
+    borderColor: '#dfe3ea',
+    borderRadius: 9,
     padding: 12,
-    alignItems: 'center',
     marginTop: 4,
   },
-  docBtnTxt: {color: '#1e90ff', fontSize: 13},
-  docNote: {color: '#888', fontSize: 11, marginBottom: 8},
+  docBtnFilled: {
+    backgroundColor: '#eefaf4',
+    borderColor: '#12b886',
+  },
+  docBtnRow: {flexDirection: 'row', alignItems: 'center'},
+  docDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#c1c7d0',
+    marginRight: 8,
+  },
+  docDotFilled: {backgroundColor: '#12b886'},
+  docBtnTxt: {color: '#5b6472', fontSize: 13},
+  docBtnTxtFilled: {color: '#0c8f68', fontWeight: '600'},
+  docNote: {color: '#8a92a2', fontSize: 11, marginBottom: 4},
   submitBtn: {
-    backgroundColor: '#1e90ff',
+    backgroundColor: '#2f6fed',
     padding: 16,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
-    elevation: 3,
-    marginTop: 4,
+    marginTop: 6,
   },
-  submitTxt: {color: '#fff', fontWeight: 'bold', fontSize: 15},
+  loadingRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  submitTxt: {color: '#fff', fontWeight: '700', fontSize: 15},
+  deleteBtn: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e03131',
+  },
+  deleteBtnTxt: {color: '#e03131', fontWeight: '700', fontSize: 14},
 });

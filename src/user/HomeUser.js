@@ -8,6 +8,9 @@ import HomeScreen from './Home';
 import UserBurialFormScreen from './UserBurialForm';
 import UserBurialListScreen from './UserBurialList';
 import UserInformasiScreen from './InformasiUser';
+import CreateMenuScreen, {PilihDataLamaScreen} from './CreateMenu';
+import PerpanjanganFormScreen from './PerpanjanganForm';
+import TumpanganFormScreen from './TumpanganForm';
 import ProfileScreen from './ProfileUser';
 import LoginScreen from '../Login';
 import RegisterScreen from '../Register';
@@ -17,6 +20,45 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import Home from './Home';
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+const CreateStack = createNativeStackNavigator();
+
+// Stack khusus untuk tab "Create": menu pilihan -> form terkait
+function CreateStackNavigator() {
+  return (
+    <CreateStack.Navigator>
+      <CreateStack.Screen
+        name="CreateMenu"
+        component={CreateMenuScreen}
+        options={{title: 'Pengajuan Pemakaman'}}
+      />
+      <CreateStack.Screen
+        name="PilihDataLama"
+        component={PilihDataLamaScreen}
+        options={{title: 'Pilih Data Lama'}}
+      />
+      <CreateStack.Screen
+        name="UserBurialForm"
+        component={UserBurialFormScreen}
+        options={{title: 'Pendaftaran Makam Baru'}}
+      />
+      <CreateStack.Screen
+        name="PerpanjanganForm"
+        component={PerpanjanganFormScreen}
+        options={{title: 'Perpanjangan Sewa'}}
+      />
+      <CreateStack.Screen
+        name="TumpanganForm"
+        component={TumpanganFormScreen}
+        options={{title: 'Ijin Tumpang'}}
+      />
+      <CreateStack.Screen
+        name="RiwayatPengajuan"
+        component={UserBurialListScreen}
+        options={{title: 'Riwayat Pengajuan'}}
+      />
+    </CreateStack.Navigator>
+  );
+}
 function HomeUser() {
   return (
     <Stack.Navigator>
@@ -59,7 +101,7 @@ export function Tab1() {
       />
       <Tab.Screen
         name="Create"
-        component={UserBurialListScreen}
+        component={CreateStackNavigator}
         options={{headerShown: false}}
       />
       <Tab.Screen

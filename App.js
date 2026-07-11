@@ -18,6 +18,7 @@ import ForgotPasswordScreen from './src/ForgotPassword';
 import HomeAdminScreen from './src/admin/HomeAdmin';
 import HomeUserScreen from './src/user/HomeUser';
 import AssignScreen from './src/admin/Assign';
+import AssignExtraScreen from './src/admin/AssignExtra';
 import UserBurialListScreen from './src/user/UserBurialList';
 import UserBurialFormScreen from './src/user/UserBurialForm';
 import BurialDetailScreen from './src/user/BurialDetail';
@@ -41,6 +42,7 @@ function App() {
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         <Stack.Screen name="Assign" component={AssignScreen} />
+        <Stack.Screen name="AssignExtra" component={AssignExtraScreen} />
         <Stack.Screen name="Data" component={DataScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="HomeAdmin" component={HomeAdminScreen} />

@@ -223,6 +223,7 @@ export default function BurialDetailScreen({route, navigation}) {
             // Dokumen
             dokKTP: urlKTP || null,
             dokKK: urlKK || null,
+            dokAkte: urlAkte || null,
             dokSuratKematian: urlSuratKematian || null,
             dokSuratMedis: urlSuratMedis || null,
             // Timestamp update
@@ -235,6 +236,7 @@ export default function BurialDetailScreen({route, navigation}) {
       setEditMode(false);
       setDokKTP(null);
       setDokKK(null);
+      setDokAkte(null);
       setDokSuratKematian(null);
       setDokSuratMedis(null);
       navigation.goBack();
@@ -249,56 +251,51 @@ export default function BurialDetailScreen({route, navigation}) {
   // ── Loading & null guard ────────────────────────────────────────
   if (loading)
     return (
-      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
-        <ActivityIndicator size="large" color="#1e90ff" />
+      <View style={styles.centerScreen}>
+        <ActivityIndicator size="large" color="#2f6fed" />
       </View>
     );
   if (!data)
     return (
-      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
-        <Text style={{color: '#888'}}>Data tidak ditemukan.</Text>
+      <View style={styles.centerScreen}>
+        <Text style={{color: '#8a92a2'}}>Data tidak ditemukan.</Text>
       </View>
     );
 
   const isOwner = auth().currentUser?.uid === data.createdBy;
   const canEdit = isOwner && data.status === 'pending';
 
-  // ── Warna status ────────────────────────────────────────────────
+  // ── Konfigurasi status ───────────────────────────────────────────
   const statusCfg = {
-    pending: {bg: '#fff3cd', txt: '#856404', label: '⏳ MENUNGGU VERIFIKASI'},
-    verified: {bg: '#d4edda', txt: '#155724', label: '✅ TERVERIFIKASI'},
-    rejected: {bg: '#f8d7da', txt: '#721c24', label: '❌ DITOLAK'},
+    pending: {
+      bg: '#fff8e6',
+      dot: '#f59f00',
+      txt: '#a06b00',
+      label: 'Menunggu Verifikasi',
+    },
+    verified: {
+      bg: '#eafaf3',
+      dot: '#12b886',
+      txt: '#0c8f68',
+      label: 'Terverifikasi',
+    },
+    rejected: {bg: '#fdedec', dot: '#e03131', txt: '#c0392b', label: 'Ditolak'},
   };
   const sc = statusCfg[data.status] || statusCfg.pending;
 
   // ── Sub-komponen ────────────────────────────────────────────────
-  const Row = ({icon, label, value}) => (
+  const Row = ({label, value}) => (
     <View style={styles.row}>
-      <Text style={styles.rowIcon}>{icon}</Text>
       <Text style={styles.rowLabel}>{label}</Text>
       <Text style={styles.rowValue}>{value || '-'}</Text>
     </View>
   );
 
-  const SectionTitle = ({title}) => (
-    <Text style={styles.sectionTitle}>{title}</Text>
-  );
-
-  const DocBadge = ({label, url, newFile}) => (
-    <TouchableOpacity
-      style={[
-        styles.docBadge,
-        url || newFile ? styles.docBadgeAda : styles.docBadgeTidak,
-      ]}
-      onPress={() => !editMode && bukaDoc(url, label)}>
-      <Text
-        style={[
-          styles.docBadgeTxt,
-          url || newFile ? styles.docBadgeTxtAda : styles.docBadgeTxtTidak,
-        ]}>
-        {newFile ? `🔄 ${label}` : url ? `✅ ${label}` : `❌ ${label}`}
-      </Text>
-    </TouchableOpacity>
+  const SectionTitle = ({title, color}) => (
+    <View style={styles.cardHeader}>
+      <View style={[styles.cardAccent, {backgroundColor: color}]} />
+      <Text style={styles.sectionTitle}>{title}</Text>
+    </View>
   );
 
   const JKButton = ({label}) => (
@@ -331,6 +328,7 @@ export default function BurialDetailScreen({route, navigation}) {
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
+        placeholderTextColor="#a3a9b7"
         keyboardType={keyboardType || 'default'}
         maxLength={maxLength}
         multiline={multiline}
@@ -345,22 +343,23 @@ export default function BurialDetailScreen({route, navigation}) {
       contentContainerStyle={{padding: 16, paddingBottom: 50}}>
       {/* ══ HEADER STATUS ══ */}
       <View style={[styles.statusBanner, {backgroundColor: sc.bg}]}>
+        <View style={[styles.statusDot, {backgroundColor: sc.dot}]} />
         <Text style={[styles.statusLabel, {color: sc.txt}]}>{sc.label}</Text>
       </View>
 
       {/* ══ SECTION 1: DATA JENAZAH ══ */}
       <View style={styles.card}>
-        <SectionTitle title="📋  Data Jenazah" />
+        <SectionTitle title="Data Jenazah" color="#2f6fed" />
         {!editMode ? (
           <>
-            <Row icon="👤" label="Nama" value={data.deceasedName} />
-            <Row icon="🪪" label="NIK" value={data.nikJenazah} />
-            <Row icon="📝" label="Bin/Binti" value={data.binBinti} />
-            <Row icon="⚧" label="Jenis Kelamin" value={data.jenisKelamin} />
-            <Row icon="🕌" label="Agama" value={data.agama} />
-            <Row icon="🎂" label="Tanggal Lahir" value={data.tglLahirJenazah} />
-            <Row icon="🕯️" label="Tanggal Wafat" value={data.tglWafat} />
-            <Row icon="💊" label="Penyebab" value={data.penyebabKematian} />
+            <Row label="Nama" value={data.deceasedName} />
+            <Row label="NIK" value={data.nikJenazah} />
+            <Row label="Bin/Binti" value={data.binBinti} />
+            <Row label="Jenis Kelamin" value={data.jenisKelamin} />
+            <Row label="Agama" value={data.agama} />
+            <Row label="Tanggal Lahir" value={data.tglLahirJenazah} />
+            <Row label="Tanggal Wafat" value={data.tglWafat} />
+            <Row label="Penyebab" value={data.penyebabKematian} />
           </>
         ) : (
           <>
@@ -423,15 +422,15 @@ export default function BurialDetailScreen({route, navigation}) {
 
       {/* ══ SECTION 2: DATA AHLI WARIS ══ */}
       <View style={styles.card}>
-        <SectionTitle title="👤  Data Ahli Waris" />
+        <SectionTitle title="Data Ahli Waris" color="#12b886" />
         {!editMode ? (
           <>
-            <Row icon="👤" label="Nama" value={data.heirName} />
-            <Row icon="🪪" label="NIK" value={data.nikAhliWaris} />
-            <Row icon="📞" label="No. Telepon" value={data.noTelepon} />
-            <Row icon="🤝" label="Hubungan" value={data.hubungan} />
-            <Row icon="🎂" label="Tanggal Lahir" value={data.tglLahirWaris} />
-            <Row icon="📝" label="Alamat" value={data.alamat} />
+            <Row label="Nama" value={data.heirName} />
+            <Row label="NIK" value={data.nikAhliWaris} />
+            <Row label="No. Telepon" value={data.noTelepon} />
+            <Row label="Hubungan" value={data.hubungan} />
+            <Row label="Tanggal Lahir" value={data.tglLahirWaris} />
+            <Row label="Alamat" value={data.alamat} />
           </>
         ) : (
           <>
@@ -473,9 +472,9 @@ export default function BurialDetailScreen({route, navigation}) {
             />
             <EditInput
               label="Alamat"
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Alamat Saat ini"
+              value={alamat}
+              onChangeText={setAlamat}
+              placeholder="Alamat saat ini"
               multiline
             />
           </>
@@ -484,26 +483,16 @@ export default function BurialDetailScreen({route, navigation}) {
 
       {/* ══ SECTION 3: DATA PEMAKAMAN ══ */}
       <View style={styles.card}>
-        <SectionTitle title="🕌  Data Pemakaman" />
-        <Row icon="📅" label="Tgl Pemakaman" value={data.burialDate} />
-        <Row icon="📝" label="Catatan" value={data.notes || '-'} />
+        <SectionTitle title="Data Pemakaman" color="#f59f00" />
+        <Row label="Tgl Pemakaman" value={data.burialDate} />
+        <Row label="Catatan" value={data.notes || '-'} />
         {data.assignedBlock ? (
           <>
             <View style={styles.divider} />
-            <Text style={styles.lokasiHeader}>
-              📍 Lokasi Makam (dari Admin)
-            </Text>
-            <Row icon="🗺️" label="Block" value={data.assignedBlock} />
-            <Row
-              icon="🔢"
-              label="Nomor Makam"
-              value={data.assignedGraveNumber}
-            />
-            <Row
-              icon="📋"
-              label="Catatan Admin"
-              value={data.adminNote || '-'}
-            />
+            <Text style={styles.lokasiHeader}>Lokasi Makam (dari Admin)</Text>
+            <Row label="Block" value={data.assignedBlock} />
+            <Row label="Nomor Makam" value={data.assignedGraveNumber} />
+            <Row label="Catatan Admin" value={data.adminNote || '-'} />
           </>
         ) : null}
         {editMode ? (
@@ -530,7 +519,7 @@ export default function BurialDetailScreen({route, navigation}) {
 
       {/* ══ SECTION 4: DOKUMEN ══ */}
       <View style={styles.card}>
-        <SectionTitle title="📎  Dokumen Pendukung" />
+        <SectionTitle title="Dokumen Pendukung" color="#845ef7" />
 
         {[
           {
@@ -565,12 +554,12 @@ export default function BurialDetailScreen({route, navigation}) {
           },
         ].map(({label, urlKey, newFile, setter}) => {
           const existingUrl = data[urlKey];
+          // Foto yang diinput user (baru dipilih ATAU sudah tersimpan) selalu ditampilkan
           const previewUri = newFile ? newFile.uri : existingUrl || null;
           const hasDoc = !!previewUri;
 
           return (
             <View key={label} style={styles.docItem}>
-              {/* Baris atas: label + status badge */}
               <View style={styles.docItemHeader}>
                 <Text style={styles.docItemLabel}>{label}</Text>
                 <View
@@ -578,21 +567,29 @@ export default function BurialDetailScreen({route, navigation}) {
                     styles.docStatusBadge,
                     hasDoc ? styles.docBadgeAda : styles.docBadgeTidak,
                   ]}>
+                  <View
+                    style={[
+                      styles.docStatusDot,
+                      {
+                        backgroundColor: newFile
+                          ? '#f59f00'
+                          : hasDoc
+                          ? '#12b886'
+                          : '#c1c7d0',
+                      },
+                    ]}
+                  />
                   <Text
                     style={[
                       styles.docStatusTxt,
                       hasDoc ? styles.docBadgeTxtAda : styles.docBadgeTxtTidak,
                     ]}>
-                    {newFile
-                      ? '🔄 Diperbarui'
-                      : hasDoc
-                      ? '✅ Ada'
-                      : '❌ Belum ada'}
+                    {newFile ? 'Diperbarui' : hasDoc ? 'Ada' : 'Belum ada'}
                   </Text>
                 </View>
               </View>
 
-              {/* Preview foto */}
+              {/* Preview foto yang telah diinput user */}
               {previewUri ? (
                 <TouchableOpacity
                   onPress={() => !editMode && bukaDoc(existingUrl, label)}
@@ -603,17 +600,17 @@ export default function BurialDetailScreen({route, navigation}) {
                     resizeMode="cover"
                   />
                   {!editMode && (
-                    <Text style={styles.docTapHint}>🔍 Ketuk untuk buka</Text>
+                    <Text style={styles.docTapHint}>
+                      Ketuk untuk membuka dokumen
+                    </Text>
                   )}
                 </TouchableOpacity>
               ) : (
                 <View style={styles.docEmpty}>
-                  <Text style={styles.docEmptyIcon}>📄</Text>
                   <Text style={styles.docEmptyTxt}>Belum diunggah</Text>
                 </View>
               )}
 
-              {/* Tombol ganti (hanya saat edit mode) */}
               {editMode && (
                 <TouchableOpacity
                   style={[
@@ -623,10 +620,10 @@ export default function BurialDetailScreen({route, navigation}) {
                   onPress={() => pickDoc(setter)}>
                   <Text style={styles.docGantiBtnTxt}>
                     {newFile
-                      ? '🔄 Ganti lagi'
+                      ? 'Ganti lagi'
                       : hasDoc
-                      ? '✏️ Ganti Foto'
-                      : '📎 Pilih Foto'}
+                      ? 'Ganti Foto'
+                      : 'Pilih Foto'}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -640,7 +637,7 @@ export default function BurialDetailScreen({route, navigation}) {
         <TouchableOpacity
           style={styles.btnEdit}
           onPress={() => setEditMode(true)}>
-          <Text style={styles.btnTxt}>✏️ Edit Data</Text>
+          <Text style={styles.btnTxt}>Edit Data</Text>
         </TouchableOpacity>
       )}
 
@@ -651,20 +648,19 @@ export default function BurialDetailScreen({route, navigation}) {
             onPress={handleSave}
             disabled={saving}>
             {saving ? (
-              <View
-                style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+              <View style={styles.loadingRow}>
                 <ActivityIndicator color="#fff" size="small" />
                 <Text style={styles.btnTxt}>Menyimpan...</Text>
               </View>
             ) : (
-              <Text style={styles.btnTxt}>💾 Simpan Perubahan</Text>
+              <Text style={styles.btnTxt}>Simpan Perubahan</Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.btnCancel}
             onPress={() => setEditMode(false)}
             disabled={saving}>
-            <Text style={[styles.btnTxt, {color: '#555'}]}>Batal</Text>
+            <Text style={[styles.btnTxt, {color: '#5b6472'}]}>Batal</Text>
           </TouchableOpacity>
         </>
       )}
@@ -673,178 +669,164 @@ export default function BurialDetailScreen({route, navigation}) {
 }
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: '#f1f2f6'},
-  statusBanner: {
-    borderRadius: 10,
-    padding: 12,
+  container: {flex: 1, backgroundColor: '#f4f6fb'},
+  centerScreen: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 14,
+    backgroundColor: '#f4f6fb',
   },
-  statusLabel: {fontWeight: 'bold', fontSize: 14},
+  statusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    padding: 13,
+    marginBottom: 16,
+  },
+  statusDot: {width: 9, height: 9, borderRadius: 5, marginRight: 8},
+  statusLabel: {fontWeight: '700', fontSize: 13.5},
   card: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 14,
-    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#1e90ff',
-    marginBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-    paddingBottom: 6,
-  },
-  row: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8},
-  rowIcon: {width: 22, fontSize: 14},
-  rowLabel: {width: 130, color: '#888', fontSize: 13},
-  rowValue: {flex: 1, color: '#303030', fontSize: 13, fontWeight: '600'},
-  divider: {height: 1, backgroundColor: '#f0f0f0', marginVertical: 12},
+  cardHeader: {flexDirection: 'row', alignItems: 'center', marginBottom: 12},
+  cardAccent: {width: 4, height: 18, borderRadius: 2, marginRight: 8},
+  sectionTitle: {fontSize: 15, fontWeight: '700', color: '#1b1f27'},
+  row: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: 9},
+  rowLabel: {width: 130, color: '#8a92a2', fontSize: 12.5},
+  rowValue: {flex: 1, color: '#1b1f27', fontSize: 13.5, fontWeight: '600'},
+  divider: {height: 1, backgroundColor: '#eef0f4', marginVertical: 12},
   lokasiHeader: {
-    fontWeight: 'bold',
-    color: '#2ecc71',
-    marginBottom: 8,
+    fontWeight: '700',
+    color: '#12b886',
+    marginBottom: 10,
     fontSize: 13,
   },
-  badgeRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6},
-  docHint: {color: '#aaa', fontSize: 11, marginBottom: 6},
-  docBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  docBadgeAda: {backgroundColor: '#d4edda', borderColor: '#28a745'},
-  docBadgeTidak: {backgroundColor: '#f0f0f0', borderColor: '#ccc'},
-  docBadgeTxt: {fontSize: 12, fontWeight: '600'},
-  docBadgeTxtAda: {color: '#155724'},
-  docBadgeTxtTidak: {color: '#888'},
   editLabel: {
     marginTop: 12,
-    marginBottom: 4,
-    color: '#555',
-    fontSize: 13,
+    marginBottom: 5,
+    color: '#5b6472',
+    fontSize: 12.5,
     fontWeight: '500',
   },
   editInput: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f8f9fb',
     padding: 10,
-    borderRadius: 8,
+    borderRadius: 9,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    fontSize: 13,
+    borderColor: '#e4e7ee',
+    fontSize: 13.5,
+    color: '#1b1f27',
   },
   jkRow: {flexDirection: 'row', gap: 8, marginTop: 4},
   jkBtn: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 9,
     borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#f8f9fa',
+    borderColor: '#e4e7ee',
+    backgroundColor: '#f8f9fb',
     alignItems: 'center',
   },
-  jkBtnActive: {backgroundColor: '#1e90ff', borderColor: '#1e90ff'},
-  jkTxt: {color: '#373248', fontWeight: '500'},
-  jkTxtActive: {color: '#fff', fontWeight: 'bold'},
+  jkBtnActive: {backgroundColor: '#2f6fed', borderColor: '#2f6fed'},
+  jkTxt: {color: '#5b6472', fontWeight: '500', fontSize: 13.5},
+  jkTxtActive: {color: '#fff', fontWeight: '700'},
   btnEdit: {
-    backgroundColor: '#1e90ff',
+    backgroundColor: '#2f6fed',
     padding: 15,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
-    elevation: 3,
     marginBottom: 10,
   },
   btnSave: {
-    backgroundColor: '#2ed573',
+    backgroundColor: '#12b886',
     padding: 15,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
-    elevation: 3,
     marginBottom: 10,
   },
+  loadingRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
   btnCancel: {
     backgroundColor: '#fff',
     padding: 15,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#e4e7ee',
     marginBottom: 10,
   },
-  // ── Dokumen item baru ───────────────────────────────────────────
+  // ── Dokumen item ─────────────────────────────────────────────────
   docItem: {
     borderWidth: 1,
-    borderColor: '#e8e8e8',
-    borderRadius: 10,
+    borderColor: '#eef0f4',
+    borderRadius: 12,
     padding: 12,
     marginBottom: 12,
-    backgroundColor: '#fafafa',
+    backgroundColor: '#fafbfc',
   },
   docItemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 9,
   },
-  docItemLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#333',
-  },
+  docItemLabel: {fontSize: 13, fontWeight: '700', color: '#1b1f27'},
   docStatusBadge: {
-    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 20,
-    borderWidth: 1,
   },
-  docStatusTxt: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
+  docStatusDot: {width: 6, height: 6, borderRadius: 3, marginRight: 5},
+  docStatusTxt: {fontSize: 11, fontWeight: '600'},
+  docBadgeAda: {backgroundColor: '#eafaf3'},
+  docBadgeTidak: {backgroundColor: '#eef0f4'},
+  docBadgeTxtAda: {color: '#0c8f68'},
+  docBadgeTxtTidak: {color: '#8a92a2'},
   docPreview: {
     width: '100%',
-    height: 160,
-    borderRadius: 8,
-    backgroundColor: '#e0e0e0',
+    height: 170,
+    borderRadius: 10,
+    backgroundColor: '#e4e7ee',
   },
   docTapHint: {
     textAlign: 'center',
-    fontSize: 11,
-    color: '#1e90ff',
-    marginTop: 5,
+    fontSize: 11.5,
+    color: '#2f6fed',
+    marginTop: 6,
   },
   docEmpty: {
-    height: 100,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
+    height: 90,
+    borderRadius: 10,
+    backgroundColor: '#f1f3f7',
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#e4e7ee',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  docEmptyIcon: {fontSize: 28},
-  docEmptyTxt: {color: '#aaa', fontSize: 12, marginTop: 4},
+  docEmptyTxt: {color: '#a3a9b7', fontSize: 12},
   docGantiBtn: {
     marginTop: 10,
-    padding: 9,
-    borderRadius: 8,
-    backgroundColor: '#e8f4fd',
+    padding: 10,
+    borderRadius: 9,
+    backgroundColor: '#eef2fb',
     borderWidth: 1,
-    borderColor: '#1e90ff',
+    borderColor: '#2f6fed',
     alignItems: 'center',
   },
   docGantiBtnUpdate: {
-    backgroundColor: '#fff3cd',
-    borderColor: '#f0a500',
+    backgroundColor: '#fff8e6',
+    borderColor: '#f59f00',
   },
-  docGantiBtnTxt: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1e90ff',
-  },
-  btnTxt: {color: '#fff', fontWeight: 'bold', fontSize: 15},
+  docGantiBtnTxt: {fontSize: 13, fontWeight: '600', color: '#2f6fed'},
+  btnTxt: {color: '#fff', fontWeight: '700', fontSize: 15},
 });

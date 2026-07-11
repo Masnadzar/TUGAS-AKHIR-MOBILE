@@ -15,20 +15,78 @@ import {
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 
+// ── Komponen baris tampilan (read-only) ───────────────────────────
+// Didefinisikan di LUAR ProfileScreen supaya tidak dibuat ulang tiap
+// kali ProfileScreen re-render (state berubah tiap ketikan). Kalau
+// didefinisikan di dalam, React menganggapnya komponen baru setiap
+// render sehingga TextInput di dalamnya kehilangan fokus tiap huruf.
+const InfoRow = ({label, value, locked}) => (
+  <View style={styles.infoRow}>
+    <View style={styles.infoContent}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value || '-'}</Text>
+    </View>
+    {locked && <Text style={styles.lockTag}>Terkunci</Text>}
+  </View>
+);
+
+// ── Komponen input edit (juga di luar, dengan alasan yang sama) ───
+const EditRow = ({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType,
+  maxLength,
+  multiline,
+  locked,
+}) => (
+  <View style={styles.editRow}>
+    <View style={styles.editLabelRow}>
+      <Text style={styles.editLabel}>{label}</Text>
+      {locked && <Text style={styles.lockTag}>Terkunci</Text>}
+    </View>
+    {locked ? (
+      <View style={styles.lockedInput}>
+        <Text style={styles.lockedInputTxt}>{value || '-'}</Text>
+      </View>
+    ) : (
+      <TextInput
+        style={[
+          styles.editInput,
+          multiline && {height: 80, textAlignVertical: 'top'},
+        ]}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#b0b0b0"
+        keyboardType={keyboardType || 'default'}
+        maxLength={maxLength}
+        multiline={multiline}
+        editable={!locked}
+      />
+    )}
+  </View>
+);
+
 const ProfileScreen = ({navigation}) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
 
-  // ── Data dari Firestore (semua field dari Register) ─────────────
+  // ── Data akun (semua role) ────────────────────────────────────
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('user'); // tidak bisa diubah
+
+  // ── Data khusus User: nik & tglLahir dari Register (terkunci) ──
   const [nik, setNik] = useState('');
   const [tglLahir, setTglLahir] = useState('');
+  const [hubungan, setHubungan] = useState(''); // bisa diubah
+
+  // ── Data kontak: dipakai User (alamat saja) & Admin (alamat + no telepon) ──
   const [alamat, setAlamat] = useState('');
-  const [hubungan, setHubungan] = useState('');
-  const [noTelepon, setNoTelepon] = useState(''); // bisa diubah
+  const [noTelepon, setNoTelepon] = useState(''); // No. Telepon Admin — bisa diubah
 
   // ── Load data dari Firestore ────────────────────────────────────
   useEffect(() => {
@@ -50,8 +108,8 @@ const ProfileScreen = ({navigation}) => {
             setRole(d.role || 'user');
             setNik(d.nik || '');
             setTglLahir(d.tglLahir || '');
-            setAlamat(d.alamat || '');
             setHubungan(d.hubungan || '');
+            setAlamat(d.alamat || '');
             setNoTelepon(d.noTelepon || d.phone || '');
           } else {
             setName(currentUser.displayName || '');
@@ -68,13 +126,7 @@ const ProfileScreen = ({navigation}) => {
     return () => unsub();
   }, [navigation]);
 
-  // ── Auto-format tanggal ─────────────────────────────────────────
-  const formatTanggal = (text, setter) => {
-    let val = text.replace(/[^0-9]/g, '');
-    if (val.length > 2) val = val.slice(0, 2) + '-' + val.slice(2);
-    if (val.length > 5) val = val.slice(0, 5) + '-' + val.slice(5);
-    setter(val.slice(0, 10));
-  };
+  const isAdmin = role === 'admin';
 
   // ── Simpan perubahan ────────────────────────────────────────────
   const handleSave = async () => {
@@ -85,24 +137,41 @@ const ProfileScreen = ({navigation}) => {
       Alert.alert('Validasi', 'Nama tidak boleh kosong.');
       return;
     }
-    if (noTelepon.trim() && !/^\d{10,13}$/.test(noTelepon.trim())) {
-      Alert.alert('Validasi', 'No. telepon harus 10-13 digit angka.');
-      return;
+
+    if (isAdmin) {
+      if (!alamat.trim() || !noTelepon.trim()) {
+        Alert.alert('Validasi', 'Alamat dan no. telepon wajib diisi.');
+        return;
+      }
+      if (!/^\d{10,13}$/.test(noTelepon.trim())) {
+        Alert.alert('Validasi', 'No. telepon harus 10-13 digit angka.');
+        return;
+      }
+    } else {
+      if (!alamat.trim() || !hubungan.trim()) {
+        Alert.alert('Validasi', 'Alamat dan hubungan wajib diisi.');
+        return;
+      }
     }
 
     try {
       setSaving(true);
-      await firestore().collection('users').doc(currentUser.uid).set(
-        {
-          name: name.trim(), // String — bisa diubah
-          noTelepon: noTelepon.trim(), // String — bisa diubah
-          alamat: alamat.trim(), // String — bisa diubah
-          hubungan: hubungan.trim(), // String — bisa diubah
-          // nik, tglLahir, role, email TIDAK diupdate (read-only)
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        },
-        {merge: true},
-      );
+      const payload = {
+        name: name.trim(), // String — bisa diubah
+        alamat: alamat.trim(), // String — bisa diubah
+        // nik, tglLahir, role, email TIDAK diupdate (read-only)
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      };
+      if (isAdmin) {
+        payload.noTelepon = noTelepon.trim();
+      } else {
+        payload.hubungan = hubungan.trim();
+      }
+
+      await firestore()
+        .collection('users')
+        .doc(currentUser.uid)
+        .set(payload, {merge: true});
       setEditing(false);
       Alert.alert('Sukses', 'Profil berhasil disimpan.');
     } catch (err) {
@@ -111,6 +180,49 @@ const ProfileScreen = ({navigation}) => {
     } finally {
       setSaving(false);
     }
+  };
+
+  // ── Hapus data profil (opsional, tetap menjaga akun & login) ────
+  const handleDeleteData = () => {
+    const pesan = isAdmin
+      ? 'Data profil (nama, no. telepon, alamat) akan dikosongkan. Akun login kamu tidak akan terhapus. Lanjutkan?'
+      : 'Data profil (nama, alamat, hubungan) akan dikosongkan. Akun login kamu tidak akan terhapus. Lanjutkan?';
+
+    Alert.alert('Hapus Data Profil', pesan, [
+      {text: 'Batal', style: 'cancel'},
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          const currentUser = auth().currentUser;
+          if (!currentUser) return;
+          try {
+            setSaving(true);
+            const payload = {
+              name: '',
+              alamat: '',
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            };
+            if (isAdmin) {
+              payload.noTelepon = '';
+            } else {
+              payload.hubungan = '';
+            }
+            await firestore()
+              .collection('users')
+              .doc(currentUser.uid)
+              .set(payload, {merge: true});
+            setEditing(false);
+            Alert.alert('Sukses', 'Data profil berhasil dihapus.');
+          } catch (err) {
+            console.log('[Profile] delete error:', err);
+            Alert.alert('Error', 'Gagal menghapus data profil.');
+          } finally {
+            setSaving(false);
+          }
+        },
+      },
+    ]);
   };
 
   // ── Logout ──────────────────────────────────────────────────────
@@ -150,63 +262,9 @@ const ProfileScreen = ({navigation}) => {
     (email && email.charAt(0).toUpperCase()) ||
     'U';
 
-  const isAdmin = role === 'admin';
-  const roleLabel = isAdmin ? '🛡️  Administrator' : '👤  User';
+  const roleLabel = isAdmin ? 'Administrator' : 'User';
   const roleBg = isAdmin ? '#fff3cd' : '#e8f4fd';
-  const roleTxt = isAdmin ? '#856404' : '#1e90ff';
-
-  // ── Komponen baris tampilan (read-only) ─────────────────────────
-  const InfoRow = ({icon, label, value, locked}) => (
-    <View style={styles.infoRow}>
-      <View style={styles.infoIconBox}>
-        <Text style={styles.infoIcon}>{icon}</Text>
-      </View>
-      <View style={styles.infoContent}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value || '-'}</Text>
-      </View>
-      {locked && <Text style={styles.lockIcon}>🔒</Text>}
-    </View>
-  );
-
-  // ── Komponen input edit ─────────────────────────────────────────
-  const EditRow = ({
-    icon,
-    label,
-    value,
-    onChangeText,
-    placeholder,
-    keyboardType,
-    maxLength,
-    multiline,
-    locked,
-  }) => (
-    <View style={styles.editRow}>
-      <Text style={styles.editLabel}>
-        {icon} {label} {locked ? '🔒' : ''}
-      </Text>
-      {locked ? (
-        <View style={styles.lockedInput}>
-          <Text style={styles.lockedInputTxt}>{value || '-'}</Text>
-        </View>
-      ) : (
-        <TextInput
-          style={[
-            styles.editInput,
-            multiline && {height: 75, textAlignVertical: 'top'},
-          ]}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor="#bbb"
-          keyboardType={keyboardType || 'default'}
-          maxLength={maxLength}
-          multiline={multiline}
-          editable={!locked}
-        />
-      )}
-    </View>
-  );
+  const roleTxt = isAdmin ? '#8a6d1e' : '#1e6fbf';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -214,9 +272,7 @@ const ProfileScreen = ({navigation}) => {
       <ScrollView
         style={styles.container}
         contentContainerStyle={{paddingBottom: 40}}>
-        {/* ══════════════════════════════════════
-            HERO HEADER
-        ══════════════════════════════════════ */}
+        {/* HERO HEADER */}
         <View style={styles.heroHeader}>
           <View style={styles.heroBg} />
           <View style={styles.avatarWrapper}>
@@ -233,19 +289,16 @@ const ProfileScreen = ({navigation}) => {
           <Text style={styles.heroEmail}>{email}</Text>
         </View>
 
-        {/* ══════════════════════════════════════
-            KARTU INFO / EDIT
-        ══════════════════════════════════════ */}
+        {/* KARTU INFO / EDIT */}
         <View style={styles.mainCard}>
-          {/* ── Sub-judul section ── */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
-              {editing ? '✏️  Edit Profil' : '📋  Informasi Profil'}
+              {editing ? 'Edit Profil' : 'Informasi Profil'}
             </Text>
             <View style={styles.editModeTag}>
               <Text
                 style={{
-                  color: editing ? '#1e90ff' : '#aaa',
+                  color: editing ? '#1e90ff' : '#999',
                   fontSize: 11,
                   fontWeight: '600',
                 }}>
@@ -260,109 +313,121 @@ const ProfileScreen = ({navigation}) => {
             /* ════ VIEW MODE ════ */
             <>
               <Text style={styles.groupLabel}>Data Akun</Text>
-              <InfoRow icon="👤" label="Nama Lengkap" value={name} />
-              <InfoRow icon="📧" label="Email" value={email} locked />
-              <InfoRow icon="🛡️" label="Role" value={roleLabel} locked />
+              <InfoRow label="Nama Lengkap" value={name} />
+              <InfoRow label="Email" value={email} locked />
+              <InfoRow label="Role" value={roleLabel} locked />
 
-              <View style={styles.divider} />
-              <Text style={styles.groupLabel}>Data Identitas</Text>
-              <InfoRow icon="🪪" label="NIK" value={nik} locked />
-              <InfoRow
-                icon="🎂"
-                label="Tanggal Lahir"
-                value={tglLahir}
-                locked
-              />
+              {isAdmin ? (
+                <>
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>Data Kontak Admin</Text>
+                  <InfoRow label="No. Telepon Admin" value={noTelepon} />
+                  <InfoRow label="Alamat" value={alamat} />
+                </>
+              ) : (
+                <>
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>Data Identitas</Text>
+                  <InfoRow label="NIK" value={nik} locked />
+                  <InfoRow label="Tanggal Lahir" value={tglLahir} locked />
 
-              <View style={styles.divider} />
-              <Text style={styles.groupLabel}>Data Kontak & Alamat</Text>
-              <InfoRow icon="📞" label="No. Telepon" value={noTelepon} />
-              <InfoRow icon="🏠" label="Alamat" value={alamat} />
-              <InfoRow
-                icon="🤝"
-                label="Hubungan dgn Jenazah"
-                value={hubungan}
-              />
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>Data Kontak & Alamat</Text>
+                  <InfoRow label="Alamat" value={alamat} />
+                  <InfoRow label="Hubungan dengan Jenazah" value={hubungan} />
+                </>
+              )}
             </>
           ) : (
             /* ════ EDIT MODE ════ */
             <>
               <Text style={styles.groupLabel}>Data Akun</Text>
               <EditRow
-                icon="👤"
                 label="Nama Lengkap"
                 value={name}
                 onChangeText={setName}
                 placeholder="Nama lengkap kamu"
               />
-              <EditRow icon="📧" label="Email" value={email} locked />
+              <EditRow label="Email" value={email} locked />
               <EditRow
-                icon="🛡️"
                 label="Role"
                 value={isAdmin ? 'Administrator' : 'User'}
                 locked
               />
 
-              <View style={styles.divider} />
-              <Text style={styles.groupLabel}>
-                Data Identitas (tidak bisa diubah)
-              </Text>
-              <EditRow icon="🪪" label="NIK" value={nik} locked />
-              <EditRow
-                icon="🎂"
-                label="Tanggal Lahir"
-                value={tglLahir}
-                locked
-              />
+              {isAdmin ? (
+                <>
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>Data Kontak Admin</Text>
+                  <EditRow
+                    label="No. Telepon Admin"
+                    value={noTelepon}
+                    onChangeText={setNoTelepon}
+                    placeholder="08123456789"
+                    keyboardType="phone-pad"
+                    maxLength={13}
+                  />
+                  <EditRow
+                    label="Alamat"
+                    value={alamat}
+                    onChangeText={setAlamat}
+                    placeholder="Alamat lengkap kamu"
+                    multiline
+                  />
+                </>
+              ) : (
+                <>
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>
+                    Data Identitas (tidak bisa diubah)
+                  </Text>
+                  <EditRow label="NIK" value={nik} locked />
+                  <EditRow label="Tanggal Lahir" value={tglLahir} locked />
 
-              <View style={styles.divider} />
-              <Text style={styles.groupLabel}>Data Kontak & Alamat</Text>
-              <EditRow
-                icon="📞"
-                label="No. Telepon"
-                value={noTelepon}
-                onChangeText={setNoTelepon}
-                placeholder="08123456789"
-                keyboardType="phone-pad"
-                maxLength={13}
-              />
-              <EditRow
-                icon="🏠"
-                label="Alamat"
-                value={alamat}
-                onChangeText={setAlamat}
-                placeholder="Alamat lengkap kamu"
-                multiline
-              />
-              <EditRow
-                icon="🤝"
-                label="Hubungan dgn Jenazah"
-                value={hubungan}
-                onChangeText={setHubungan}
-                placeholder="Anak, Suami, Istri, Saudara"
-              />
+                  <View style={styles.divider} />
+                  <Text style={styles.groupLabel}>Data Kontak & Alamat</Text>
+                  <EditRow
+                    label="Alamat"
+                    value={alamat}
+                    onChangeText={setAlamat}
+                    placeholder="Alamat lengkap kamu"
+                    multiline
+                  />
+                  <EditRow
+                    label="Hubungan dengan Jenazah"
+                    value={hubungan}
+                    onChangeText={setHubungan}
+                    placeholder="Anak, Suami, Istri, Saudara"
+                  />
+                </>
+              )}
 
               <Text style={styles.editHint}>
-                🔒 = tidak bisa diubah setelah registrasi
+                Kolom bertanda "Terkunci" tidak bisa diubah setelah registrasi
               </Text>
             </>
           )}
         </View>
 
-        {/* ══════════════════════════════════════
-            TOMBOL AKSI
-        ══════════════════════════════════════ */}
+        {/* TOMBOL AKSI */}
         {!editing ? (
-          <View style={styles.btnRow}>
+          <>
+            <View style={styles.btnRow}>
+              <TouchableOpacity
+                style={styles.btnEdit}
+                onPress={() => setEditing(true)}>
+                <Text style={styles.btnEditTxt}>Edit Profil</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnLogout} onPress={handleLogout}>
+                <Text style={styles.btnLogoutTxt}>Logout</Text>
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
-              style={styles.btnEdit}
-              onPress={() => setEditing(true)}>
-              <Text style={styles.btnEditTxt}>✏️ Edit Profil</Text>
+              style={styles.btnDeleteData}
+              onPress={handleDeleteData}>
+              <Text style={styles.btnDeleteDataTxt}>Hapus Data Profil</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.btnLogout} onPress={handleLogout}>
-              <Text style={styles.btnLogoutTxt}>🚪 Logout</Text>
-            </TouchableOpacity>
-          </View>
+          </>
         ) : (
           <View style={styles.btnRow}>
             <TouchableOpacity
@@ -376,7 +441,7 @@ const ProfileScreen = ({navigation}) => {
                   <Text style={styles.btnSaveTxt}>Menyimpan...</Text>
                 </View>
               ) : (
-                <Text style={styles.btnSaveTxt}>💾 Simpan</Text>
+                <Text style={styles.btnSaveTxt}>Simpan</Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity
@@ -483,23 +548,36 @@ const styles = StyleSheet.create({
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderBottomWidth: 1,
     borderBottomColor: '#f8f8f8',
   },
-  infoIconBox: {width: 32, alignItems: 'center'},
-  infoIcon: {fontSize: 16},
-  infoContent: {flex: 1, marginLeft: 8},
+  infoContent: {flex: 1},
   infoLabel: {fontSize: 11, color: '#aaa'},
-  infoValue: {fontSize: 14, color: '#303030', fontWeight: '500', marginTop: 1},
-  lockIcon: {fontSize: 13, marginLeft: 6},
+  infoValue: {fontSize: 14, color: '#303030', fontWeight: '500', marginTop: 2},
+  lockTag: {
+    fontSize: 10,
+    color: '#b08d2e',
+    backgroundColor: '#fdf3d8',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+    overflow: 'hidden',
+  },
 
   // ── Edit Row ──
-  editRow: {marginBottom: 10},
-  editLabel: {fontSize: 12, color: '#555', fontWeight: '600', marginBottom: 4},
+  editRow: {marginBottom: 12},
+  editLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  editLabel: {fontSize: 12, color: '#555', fontWeight: '600'},
   editInput: {
     backgroundColor: '#f8f9fa',
-    padding: 10,
+    padding: 11,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e0e0e0',
@@ -508,7 +586,7 @@ const styles = StyleSheet.create({
   },
   lockedInput: {
     backgroundColor: '#f0f0f0',
-    padding: 10,
+    padding: 11,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e8e8e8',
@@ -520,7 +598,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginHorizontal: 16,
     gap: 10,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   btnEdit: {
     flex: 1,
@@ -540,6 +618,17 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   btnLogoutTxt: {color: '#fff', fontWeight: 'bold', fontSize: 14},
+  btnDeleteData: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ff4757',
+    backgroundColor: '#fff',
+  },
+  btnDeleteDataTxt: {color: '#ff4757', fontWeight: '600', fontSize: 13},
   btnSave: {
     flex: 2,
     backgroundColor: '#2ed573',
