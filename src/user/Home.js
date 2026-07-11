@@ -1,31 +1,12 @@
-// ================================================================
-// FILE: screens/HomeUserScreen.js
-// ================================================================
-// Menggunakan @react-native-firebase/auth dan firestore
-//
-// ASUMSI STRUKTUR DATA (silakan sesuaikan bila field asli beda):
-// Collection "burials", field:
-//   jenisPermohonan : 'baru' | 'perpanjangan' | 'tumpang'
-//   deceasedName, nik, tglLahir, tglWafat, jenisKelamin, agama, status,
-//   createdAt, createdBy
-//   foto            : array of image URL string (foto2 yang diupload user)
-//   data            : object bebas berisi field spesifik per jenis
-//                      permohonan, contoh:
-//                      - baru        -> { binBinti, penyebabKematian, alamatJenazah, ... }
-//                      - perpanjangan-> { blokLama, noMakamLama, masaBerlakuLama,
-//                                          masaBerlakuBaru, alasan, ... }
-//                      - tumpang     -> { namaJenazahLama, hubungan, blok, noMakam, ... }
-//
-// PERUBAHAN pada versi ini (ditambah dari versi sebelumnya):
-// - Tombol "Export Bukti PDF" di tiap kartu (saat expand), untuk
-//   generate bukti pengajuan & kelengkapan berkas dalam bentuk PDF,
-//   yang bisa diserahkan/ditunjukkan ke petugas TPU.
-// - Badge kecil "Lengkap" / "Belum Lengkap" di kartu, dihitung dari
-//   checklist persyaratan sesuai jenis permohonannya.
-// - Loading indicator saat proses generate PDF berjalan.
-// ================================================================
-
-import React, {useEffect, useState} from 'react';
+// src/user/Home.js
+// Update: kartu data sekarang bisa DI-TAP LANGSUNG untuk membuka detail
+// (satu kali tap), konsisten untuk ketiga jenis permohonan -- Makam Baru,
+// Perpanjangan, dan Ijin Tumpang. Sebelumnya harus expand dulu baru tekan
+// tombol "Lihat Detail", dan field ringkasan (assignedBlock dkk) tidak
+// sinkron dengan field asli yang ditulis oleh PerpanjanganForm/TumpanganForm
+// sehingga data tidak tampil. Field ringkasan sekarang disamakan persis
+// dengan field yang dipakai di PengajuanDetail.js.
+import React, {useEffect, useState, useCallback} from 'react';
 import {
   SafeAreaView,
   StatusBar,
@@ -36,13 +17,14 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  Image,
   Alert,
 } from 'react-native';
+import {useFocusEffect} from '@react-navigation/native';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
-// ─── Palet warna ──────────────────────────────────────────────
+// ── Palet warna ──────────────────────────────────────────────────
 const C = {
   bg: '#0b1120',
   hijau: '#00c853',
@@ -57,39 +39,34 @@ const C = {
   teksUtama: '#1a2535',
 };
 
-// ─── Definisi 3 jenis permohonan ──────────────────────────────
+// ── Definisi 3 jenis permohonan, dipetakan ke collection & layar aslinya ──
 const JENIS = {
-  baru: {key: 'baru', label: 'Makam Baru', warna: C.hijau},
-  perpanjangan: {key: 'perpanjangan', label: 'Perpanjangan', warna: C.biru},
-  tumpang: {key: 'tumpang', label: 'Ijin Tumpang', warna: C.ungu},
+  baru: {
+    key: 'baru',
+    label: 'Makam Baru',
+    warna: C.hijau,
+    icon: 'add-circle-outline',
+    collection: 'burials',
+    formScreen: 'UserBurialForm',
+  },
+  perpanjangan: {
+    key: 'perpanjangan',
+    label: 'Perpanjangan',
+    warna: C.biru,
+    icon: 'refresh-circle-outline',
+    collection: 'perpanjangan',
+    formScreen: 'PerpanjanganForm',
+  },
+  tumpang: {
+    key: 'tumpang',
+    label: 'Ijin Tumpang',
+    warna: C.ungu,
+    icon: 'people-circle-outline',
+    collection: 'tumpangan',
+    formScreen: 'TumpanganForm',
+  },
 };
 
-// ─── Nomor persyaratan yang berlaku per jenis (untuk hitung status lengkap) ──
-const NOMOR_PER_JENIS = {
-  baru: [1, 2, 3, 4, 5, 6, 7],
-  perpanjangan: [1, 2, 3, 7, 8],
-  tumpang: [1, 2, 3, 4, 5, 6, 7, 8],
-};
-
-// Cek cepat status kelengkapan berkas (dipakai utk badge di kartu).
-// Memakai field item.dokumen (lihat catatan asumsi di utils/generateBuktiPdf.js)
-const cekKelengkapan = (item, jenis) => {
-  const dokumen = item?.dokumen || {};
-  const nomorBerlaku = NOMOR_PER_JENIS[jenis] || NOMOR_PER_JENIS.baru;
-  const keyPerNomor = {
-    1: true, // formulir otomatis ada
-    2: !!dokumen.ktpKkPemohon,
-    3: item?.dikuasakan ? !!dokumen.suratKuasa : true, // syarat ini hanya berlaku jika dikuasakan
-    4: !!dokumen.ktpKkJenazah,
-    5: !!dokumen.suratKematian,
-    6: !!dokumen.suratKelurahan,
-    7: !!dokumen.suratPengantarTpu,
-    8: !!dokumen.izinLama,
-  };
-  return nomorBerlaku.every(no => keyPerNomor[no] === true);
-};
-
-// ─── Helper tanggal ───────────────────────────────────────────
 const formatTgl = val => {
   if (!val) return '-';
   try {
@@ -104,26 +81,6 @@ const formatTgl = val => {
   }
 };
 
-const formatTglLengkap = val => {
-  if (!val) return '-';
-  try {
-    const d = val?.toDate ? val.toDate() : new Date(val);
-    return d.toLocaleDateString('id-ID', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return String(val);
-  }
-};
-
-// ─── Helper label field generik → jadi "Judul Rapi" ──────────
-const rapikanLabel = key =>
-  key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, s => s.toUpperCase());
-
 const warnaBadge = status => {
   switch (status) {
     case 'verified':
@@ -135,142 +92,7 @@ const warnaBadge = status => {
   }
 };
 
-// ================================================================
-// IKON CUSTOM (View murni, tanpa emoji & tanpa library eksternal)
-// ================================================================
-
-// Ikon "+" untuk Makam Baru
-const IconBaru = ({warna, aktif}) => (
-  <View style={ikon.kotak}>
-    <View style={[ikon.plusBar, {backgroundColor: aktif ? '#fff' : warna}]} />
-    <View
-      style={[
-        ikon.plusBar,
-        ikon.plusBarTegak,
-        {backgroundColor: aktif ? '#fff' : warna},
-      ]}
-    />
-  </View>
-);
-
-// Ikon panah melingkar sederhana untuk Perpanjangan
-const IconPerpanjangan = ({warna, aktif}) => (
-  <View style={ikon.kotak}>
-    <View
-      style={[ikon.lingkaranSetengah, {borderColor: aktif ? '#fff' : warna}]}
-    />
-    <View
-      style={[ikon.panahKecil, {borderBottomColor: aktif ? '#fff' : warna}]}
-    />
-  </View>
-);
-
-// Ikon kotak bertumpuk untuk Ijin Tumpang
-const IconTumpang = ({warna, aktif}) => (
-  <View style={ikon.kotak}>
-    <View
-      style={[
-        ikon.tumpukKotak,
-        ikon.tumpukKotakBelakang,
-        {borderColor: aktif ? '#ffffffaa' : warna + '88'},
-      ]}
-    />
-    <View
-      style={[
-        ikon.tumpukKotak,
-        ikon.tumpukKotakDepan,
-        {
-          borderColor: aktif ? '#fff' : warna,
-          backgroundColor: aktif ? '#ffffff22' : warna + '18',
-        },
-      ]}
-    />
-  </View>
-);
-
-// Ikon panah kanan kecil (chevron) untuk navigasi kartu
-const IconChevron = ({warna = C.abu}) => (
-  <View style={ikon.chevronWrap}>
-    <View
-      style={[ikon.chevronBar, ikon.chevronAtas, {backgroundColor: warna}]}
-    />
-    <View
-      style={[ikon.chevronBar, ikon.chevronBawah, {backgroundColor: warna}]}
-    />
-  </View>
-);
-
-// Ikon kamera kecil, dipakai saat item tidak punya foto
-const IconKamera = ({warna = C.abu}) => (
-  <View style={ikon.kameraLuar}>
-    <View style={[ikon.kameraLensa, {borderColor: warna}]} />
-  </View>
-);
-
-// Ikon dokumen sederhana, dipakai di tombol Export PDF
-const IconDokumen = ({warna = '#fff'}) => (
-  <View style={ikon.dokumenLuar}>
-    <View style={[ikon.dokumenGaris, {backgroundColor: warna}]} />
-    <View
-      style={[
-        ikon.dokumenGaris,
-        ikon.dokumenGarisTengah,
-        {backgroundColor: warna},
-      ]}
-    />
-    <View
-      style={[
-        ikon.dokumenGaris,
-        ikon.dokumenGarisBawah,
-        {backgroundColor: warna},
-      ]}
-    />
-  </View>
-);
-
-const IKON_JENIS = {
-  baru: IconBaru,
-  perpanjangan: IconPerpanjangan,
-  tumpang: IconTumpang,
-};
-
-// ─── Baris info label/value ────────────────────────────────────
-const InfoBaris = ({label, value}) => (
-  <View style={styles.infoBaris}>
-    <Text style={styles.infoBarisLabel}>{rapikanLabel(label)}</Text>
-    <Text style={styles.infoBarisValue} numberOfLines={3}>
-      {value === undefined || value === null || value === ''
-        ? '-'
-        : String(value)}
-    </Text>
-  </View>
-);
-
-// ─── Galeri foto horizontal ────────────────────────────────────
-const GaleriFoto = ({foto}) => {
-  if (!foto || foto.length === 0) {
-    return (
-      <View style={styles.fotoKosong}>
-        <IconKamera warna={C.abu} />
-        <Text style={styles.fotoKosongTeks}>Belum ada foto</Text>
-      </View>
-    );
-  }
-  return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-      {foto.map((url, idx) => (
-        <Image
-          key={idx}
-          source={{uri: url}}
-          style={styles.fotoThumb}
-          resizeMode="cover"
-        />
-      ))}
-    </ScrollView>
-  );
-};
-
-// ─── Kartu statistik ringkas ────────────────────────────────────
+// ── Kartu statistik ringkas ─────────────────────────────────────────
 const StatCard = ({label, value, warna}) => (
   <View style={[styles.statCard, {borderLeftColor: warna}]}>
     <Text style={[styles.statAngka, {color: warna}]}>{value}</Text>
@@ -284,15 +106,17 @@ const StatCard = ({label, value, warna}) => (
 export default function HomeUserScreen({navigation}) {
   const [loading, setLoading] = useState(true);
   const [profil, setProfil] = useState(null);
-
-  const [semuaPermohonan, setSemuaPermohonan] = useState([]); // milik user, semua jenis
   const [jenisAktif, setJenisAktif] = useState('baru');
-  const [expandId, setExpandId] = useState(null);
-  const [exportingId, setExportingId] = useState(null); // id kartu yg sedang diexport PDF
+
+  // Data per collection asli — TIDAK digabung jadi satu, karena field-nya
+  // memang berbeda antar jenis permohonan.
+  const [dataBaru, setDataBaru] = useState([]);
+  const [dataPerpanjangan, setDataPerpanjangan] = useState([]);
+  const [dataTumpangan, setDataTumpangan] = useState([]);
 
   const user = auth().currentUser;
 
-  // ── Ambil profil user ─────────────────────────────────────
+  // ── Ambil profil user ────────────────────────────────────────────
   useEffect(() => {
     if (!user) {
       navigation.reset({index: 0, routes: [{name: 'Login'}]});
@@ -308,31 +132,64 @@ export default function HomeUserScreen({navigation}) {
       .catch(() => {});
   }, []);
 
-  // ── Ambil semua permohonan milik user (3 jenis sekaligus) ──
+  // ── Dengarkan 3 collection sekaligus, realtime ────────────────────
+  // TANPA orderBy pada query (hanya where createdBy), lalu diurutkan manual
+  // di JS -- supaya tidak butuh composite index Firestore. Karena realtime,
+  // data baru yang baru saja diinput lewat form otomatis langsung muncul
+  // di Home tanpa perlu refresh manual.
   useEffect(() => {
     if (!user) return;
 
-    const unsub = firestore()
+    const sortDesc = (a, b) => {
+      const ta = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+      const tb = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      return tb - ta;
+    };
+
+    const unsubBaru = firestore()
       .collection('burials')
       .where('createdBy', '==', user.uid)
-      .orderBy('createdAt', 'desc')
       .onSnapshot(
         snap => {
           const arr = [];
           snap.forEach(doc => arr.push({id: doc.id, ...doc.data()}));
-          setSemuaPermohonan(arr);
+          setDataBaru(arr.sort(sortDesc));
           setLoading(false);
         },
         err => {
-          console.log('[HomeUser] err', err);
+          console.log('[HomeUser] burials err', err);
           setLoading(false);
         },
       );
 
+    const unsubPerpanjangan = firestore()
+      .collection('perpanjangan')
+      .where('createdBy', '==', user.uid)
+      .onSnapshot(
+        snap => {
+          const arr = [];
+          snap.forEach(doc => arr.push({id: doc.id, ...doc.data()}));
+          setDataPerpanjangan(arr.sort(sortDesc));
+        },
+        err => console.log('[HomeUser] perpanjangan err', err),
+      );
+
+    const unsubTumpangan = firestore()
+      .collection('tumpangan')
+      .where('createdBy', '==', user.uid)
+      .onSnapshot(
+        snap => {
+          const arr = [];
+          snap.forEach(doc => arr.push({id: doc.id, ...doc.data()}));
+          setDataTumpangan(arr.sort(sortDesc));
+        },
+        err => console.log('[HomeUser] tumpangan err', err),
+      );
+
     return () => {
-      try {
-        unsub();
-      } catch (_) {}
+      unsubBaru();
+      unsubPerpanjangan();
+      unsubTumpangan();
     };
   }, [user]);
 
@@ -354,172 +211,133 @@ export default function HomeUserScreen({navigation}) {
     ]);
   };
 
-  const toggleExpand = id => setExpandId(prev => (prev === id ? null : id));
+  const namaUser = profil?.name || user?.email?.split('@')[0] || 'User';
 
-  // ── Export PDF bukti pengajuan & kelengkapan berkas ────────
-  const namaUserSaatIni = profil?.name || user?.email?.split('@')[0] || 'User';
+  const listPerJenis = {
+    baru: dataBaru,
+    perpanjangan: dataPerpanjangan,
+    tumpang: dataTumpangan,
+  };
+  const daftarTampil = listPerJenis[jenisAktif] || [];
 
-  const handleExportPdf = async item => {
-    if (exportingId) return; // cegah double-tap saat masih proses
-    setExportingId(item.id);
-    try {
-      const {lengkap} = await generateBuktiPdf({
-        item,
-        jenis: item.jenisPermohonan || 'baru',
-        namaUser: namaUserSaatIni,
+  // ── Tombol "+ Ajukan" mengarah ke layar yang benar sesuai jenisAktif.
+  // Untuk Perpanjangan/Tumpangan, otomatis dihubungkan ke data Makam Baru
+  // milik user (persis logika yang sama dengan CreateMenu.js di tab Create). ──
+  const handleAjukan = () => {
+    const jenis = JENIS[jenisAktif];
+
+    if (jenis.key === 'baru') {
+      navigation.navigate('Create', {screen: jenis.formScreen});
+      return;
+    }
+
+    // Perpanjangan & Tumpangan butuh data makam lama untuk dihubungkan
+    if (dataBaru.length === 0) {
+      navigation.navigate('Create', {
+        screen: jenis.formScreen,
+        params: {linkedBurialId: null},
       });
-      Alert.alert(
-        lengkap ? 'Berkas Lengkap' : 'Berkas Belum Lengkap',
-        lengkap
-          ? 'PDF bukti pengajuan berhasil dibuat. Seluruh dokumen yang disyaratkan sudah terisi, silakan serahkan ke petugas TPU.'
-          : 'PDF bukti pengajuan berhasil dibuat, namun masih ada dokumen yang belum terisi. Silakan lengkapi terlebih dahulu.',
-      );
-    } catch (err) {
-      console.log('[ExportPdf] err', err);
-      Alert.alert('Gagal', 'Terjadi kesalahan saat membuat PDF. Coba lagi.');
-    } finally {
-      setExportingId(null);
+      return;
+    }
+    if (dataBaru.length === 1) {
+      navigation.navigate('Create', {
+        screen: jenis.formScreen,
+        params: {linkedBurialId: dataBaru[0].id},
+      });
+      return;
+    }
+    // Lebih dari 1 data makam -> biarkan user memilih
+    navigation.navigate('Create', {
+      screen: 'PilihDataLama',
+      params: {target: jenis.formScreen, burials: dataBaru},
+    });
+  };
+
+  // ── Navigasi ke layar detail sesuai jenis — satu tap langsung buka,
+  // konsisten untuk ketiga jenis permohonan. Makam Baru -> BurialDetail
+  // (mendukung edit + dokumen). Perpanjangan & Tumpangan -> PengajuanDetail
+  // (mendukung edit selama status masih 'pending', sama seperti Makam Baru). ──
+  const bukaDetail = item => {
+    if (jenisAktif === 'baru') {
+      navigation.navigate('BurialDetail', {id: item.id});
+    } else {
+      navigation.navigate('PengajuanDetail', {
+        id: item.id,
+        collection: JENIS[jenisAktif].collection,
+      });
     }
   };
 
-  // Hitung jumlah per jenis, untuk stat card
-  const hitungJenis = key =>
-    semuaPermohonan.filter(p => (p.jenisPermohonan || 'baru') === key).length;
-
-  const daftarTampil = semuaPermohonan.filter(
-    p => (p.jenisPermohonan || 'baru') === jenisAktif,
-  );
-
-  // ── Render satu kartu permohonan ───────────────────────────
+  // ── Render satu kartu, field ringkasan disesuaikan per jenis ──────────
   const renderKartu = ({item}) => {
-    const isExpand = expandId === item.id;
     const {bg, label} = warnaBadge(item.status);
-    const dataTambahan = item.data || {};
-    const foto = item.foto || [];
-    const jenisItem = item.jenisPermohonan || 'baru';
-    const lengkap = cekKelengkapan(item, jenisItem);
-    const sedangExport = exportingId === item.id;
+    const bisaEdit = item.status === 'pending';
+
+    // Field ringkasan disamakan persis dengan field yang ditulis oleh
+    // form pengajuan (UserBurialForm / PerpanjanganForm / TumpanganForm)
+    // dan yang ditampilkan di PengajuanDetail.js, supaya data konsisten
+    // dan tidak muncul kosong.
+    let subteks = '-';
+    if (jenisAktif === 'baru') {
+      subteks = `Wafat: ${item.tglWafat || '-'}`;
+    } else if (jenisAktif === 'perpanjangan') {
+      subteks = `Ahli waris: ${item.heirName || '-'}`;
+    } else if (jenisAktif === 'tumpang') {
+      subteks = `Blok lama: ${item.assignedBlockLama || '-'}`;
+    }
 
     return (
-      <View style={styles.kartu}>
-        <TouchableOpacity
-          style={styles.kartuHeader}
-          onPress={() => toggleExpand(item.id)}
-          activeOpacity={0.8}>
-          {/* Thumbnail foto pertama, atau ikon kamera bila kosong */}
-          {foto.length > 0 ? (
-            <Image source={{uri: foto[0]}} style={styles.kartuThumb} />
-          ) : (
-            <View style={[styles.kartuThumb, styles.kartuThumbKosong]}>
-              <IconKamera warna={C.abu} />
-            </View>
-          )}
+      <TouchableOpacity
+        style={styles.kartu}
+        onPress={() => bukaDetail(item)}
+        activeOpacity={0.85}>
+        <View style={styles.kartuHeader}>
+          <View
+            style={[
+              styles.kartuIconWrap,
+              {backgroundColor: JENIS[jenisAktif].warna + '18'},
+            ]}>
+            <Ionicons
+              name={JENIS[jenisAktif].icon}
+              size={22}
+              color={JENIS[jenisAktif].warna}
+            />
+          </View>
 
           <View style={{flex: 1, marginLeft: 12}}>
             <Text style={styles.kartuNama} numberOfLines={1}>
-              {item.deceasedName || '(nama kosong)'}
+              {item.deceasedName || item.heirName || '(nama kosong)'}
             </Text>
-            <Text style={styles.kartuSub}>
-              {item.jenisKelamin || '-'} • {item.agama || '-'}
+            <Text style={styles.kartuSub} numberOfLines={1}>
+              {subteks}
             </Text>
-            <Text style={styles.kartuSub}>Wafat: {item.tglWafat || '-'}</Text>
+            <Text style={styles.kartuTgl}>
+              Diajukan: {formatTgl(item.createdAt)}
+            </Text>
           </View>
 
           <View style={{alignItems: 'flex-end'}}>
             <View style={[styles.badge, {backgroundColor: bg}]}>
               <Text style={styles.badgeTeks}>{label}</Text>
             </View>
-            <View
-              style={[
-                styles.badgeKecil,
-                {backgroundColor: lengkap ? C.hijau : C.merah, marginTop: 6},
-              ]}>
-              <Text style={styles.badgeKecilTeks}>
-                {lengkap ? 'Berkas Lengkap' : 'Berkas Kurang'}
-              </Text>
-            </View>
-            <View style={{marginTop: 8}}>
-              <IconChevron warna={isExpand ? C.teksUtama : C.abu} />
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {isExpand && (
-          <View style={styles.expandBox}>
-            <View style={styles.garis} />
-
-            <Text style={styles.expandJudul}>Foto</Text>
-            <GaleriFoto foto={foto} />
-
-            <View style={styles.garis} />
-
-            <Text style={styles.expandJudul}>Data Jenazah</Text>
-            <InfoBaris label="NIK" value={item.nik} />
-            <InfoBaris label="Tanggal Lahir" value={item.tglLahir} />
-            <InfoBaris label="Tanggal Wafat" value={item.tglWafat} />
-            <InfoBaris label="Jenis Kelamin" value={item.jenisKelamin} />
-            <InfoBaris label="Agama" value={item.agama} />
-
-            {/* Field tambahan spesifik per jenis permohonan */}
-            {Object.keys(dataTambahan).length > 0 && (
-              <>
-                <View style={styles.garis} />
-                <Text style={styles.expandJudul}>
-                  Detail {JENIS[jenisAktif]?.label}
-                </Text>
-                {Object.entries(dataTambahan).map(([k, v]) => (
-                  <InfoBaris key={k} label={k} value={v} />
-                ))}
-              </>
+            {bisaEdit && (
+              <View style={styles.editHint}>
+                <Ionicons name="create-outline" size={11} color={C.abuGelap} />
+                <Text style={styles.editHintTeks}>Bisa diedit</Text>
+              </View>
             )}
-
-            {item.status === 'verified' && (
-              <>
-                <View style={styles.garis} />
-                <Text style={styles.expandJudul}>Data Makam</Text>
-                <InfoBaris label="Blok Makam" value={item.assignedBlock} />
-                <InfoBaris label="No. Makam" value={item.assignedGraveNumber} />
-                <InfoBaris label="Catatan Admin" value={item.adminNote} />
-                <InfoBaris
-                  label="Diverifikasi"
-                  value={formatTglLengkap(item.verifiedAt)}
-                />
-              </>
-            )}
-
-            <View style={styles.garis} />
-            <Text style={styles.diajukanTeks}>
-              Diajukan: {formatTglLengkap(item.createdAt)}
-            </Text>
-
-            <TouchableOpacity
-              style={styles.tombolDetail}
-              onPress={() =>
-                navigation.navigate('BurialDetail', {id: item.id})
-              }>
-              <Text style={styles.tombolDetailTeks}>Lihat Detail Lengkap</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tombolExport, sedangExport && {opacity: 0.6}]}
-              disabled={sedangExport}
-              onPress={() => handleExportPdf(item)}>
-              {sedangExport ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <IconDokumen warna="#fff" />
-              )}
-              <Text style={styles.tombolExportTeks}>
-                {sedangExport ? 'Membuat PDF...' : 'Export Bukti PDF'}
-              </Text>
-            </TouchableOpacity>
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={C.abu}
+              style={{marginTop: 6}}
+            />
           </View>
-        )}
-      </View>
+        </View>
+      </TouchableOpacity>
     );
   };
 
-  // ── Loading ───────────────────────────────────────────────
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -532,8 +350,6 @@ export default function HomeUserScreen({navigation}) {
     );
   }
 
-  const namaUser = namaUserSaatIni;
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar backgroundColor={C.bg} barStyle="light-content" />
@@ -541,7 +357,7 @@ export default function HomeUserScreen({navigation}) {
         style={styles.scroll}
         contentContainerStyle={{paddingBottom: 40}}
         showsVerticalScrollIndicator={false}>
-        {/* ── HEADER ──────────────────────────────────────── */}
+        {/* ── HEADER ── */}
         <View style={styles.hero}>
           <View style={styles.profilKartu}>
             <View style={styles.profilAvatar}>
@@ -561,33 +377,32 @@ export default function HomeUserScreen({navigation}) {
           </View>
         </View>
 
-        {/* ── STATISTIK RINGKAS PER JENIS ─────────────────── */}
+        {/* ── STATISTIK ── */}
         <View style={styles.seksiPadding}>
           <View style={styles.statBaris}>
             <StatCard
               label="Makam Baru"
-              value={hitungJenis('baru')}
+              value={dataBaru.length}
               warna={JENIS.baru.warna}
             />
             <StatCard
               label="Perpanjangan"
-              value={hitungJenis('perpanjangan')}
+              value={dataPerpanjangan.length}
               warna={JENIS.perpanjangan.warna}
             />
             <StatCard
               label="Ijin Tumpang"
-              value={hitungJenis('tumpang')}
+              value={dataTumpangan.length}
               warna={JENIS.tumpang.warna}
             />
           </View>
         </View>
 
-        {/* ── SELECTOR 3 JENIS PERMOHONAN ─────────────────── */}
+        {/* ── SELECTOR JENIS ── */}
         <View style={styles.seksiPadding}>
           <Text style={styles.judulSeksi}>Jenis Permohonan</Text>
           <View style={styles.jenisGrid}>
             {Object.values(JENIS).map(j => {
-              const Ikon = IKON_JENIS[j.key];
               const aktif = jenisAktif === j.key;
               return (
                 <TouchableOpacity
@@ -599,7 +414,11 @@ export default function HomeUserScreen({navigation}) {
                   ]}
                   onPress={() => setJenisAktif(j.key)}
                   activeOpacity={0.85}>
-                  <Ikon warna={j.warna} aktif={aktif} />
+                  <Ionicons
+                    name={j.icon}
+                    size={22}
+                    color={aktif ? '#fff' : j.warna}
+                  />
                   <Text
                     style={[
                       styles.jenisBtnLabel,
@@ -613,23 +432,21 @@ export default function HomeUserScreen({navigation}) {
           </View>
         </View>
 
-        {/* ── TOMBOL AJUKAN BARU (sesuai jenis aktif) ─────── */}
+        {/* ── TOMBOL AJUKAN — sesuai jenis aktif ── */}
         <View style={styles.seksiPadding}>
           <TouchableOpacity
             style={[
               styles.tombolAjukan,
               {backgroundColor: JENIS[jenisAktif].warna},
             ]}
-            onPress={() =>
-              navigation.navigate('UserBurialForm', {jenis: jenisAktif})
-            }>
+            onPress={handleAjukan}>
             <Text style={styles.tombolAjukanTeks}>
-              + Ajukan {JENIS[jenisAktif].label}
+              Ajukan {JENIS[jenisAktif].label}
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── DAFTAR DATA SESUAI JENIS AKTIF ──────────────── */}
+        {/* ── DAFTAR DATA SESUAI JENIS AKTIF ── */}
         <View style={styles.seksiPadding}>
           <Text style={styles.judulSeksi}>
             Data {JENIS[jenisAktif].label} Saya ({daftarTampil.length})
@@ -639,8 +456,9 @@ export default function HomeUserScreen({navigation}) {
             <View style={styles.kosongBox}>
               <Text style={styles.kosongTeks}>Belum ada data</Text>
               <Text style={styles.kosongSub}>
-                Data {JENIS[jenisAktif].label.toLowerCase()} yang kamu ajukan
-                akan muncul di sini.
+                Data {JENIS[jenisAktif].label.toLowerCase()} yang Anda ajukan
+                akan muncul di sini dan bisa langsung ditekan untuk melihat
+                detail lengkap serta diedit selama masih berstatus Pending.
               </Text>
             </View>
           ) : (
@@ -657,9 +475,6 @@ export default function HomeUserScreen({navigation}) {
   );
 }
 
-// ================================================================
-// STYLES
-// ================================================================
 const styles = StyleSheet.create({
   safeArea: {flex: 1, backgroundColor: C.bg},
   scroll: {flex: 1, backgroundColor: '#f4f5f7'},
@@ -671,7 +486,6 @@ const styles = StyleSheet.create({
   },
   loadingTeks: {color: C.putih, marginTop: 12, fontSize: 14},
 
-  // ── Hero ──────────────────────────────────────────────────
   hero: {
     backgroundColor: C.bg,
     paddingHorizontal: 16,
@@ -698,7 +512,6 @@ const styles = StyleSheet.create({
   },
   logoutTeks: {color: C.putih, fontSize: 12, fontWeight: '600'},
 
-  // ── Seksi umum ────────────────────────────────────────────
   seksiPadding: {paddingHorizontal: 14, marginTop: 14},
   judulSeksi: {
     fontSize: 14,
@@ -707,7 +520,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  // ── Stat cards ────────────────────────────────────────────
   statBaris: {flexDirection: 'row', gap: 10},
   statCard: {
     flex: 1,
@@ -720,7 +532,6 @@ const styles = StyleSheet.create({
   statAngka: {fontSize: 22, fontWeight: 'bold'},
   statLabel: {fontSize: 10, color: C.abuGelap, marginTop: 3},
 
-  // ── Selector jenis ────────────────────────────────────────
   jenisGrid: {flexDirection: 'row', gap: 10},
   jenisBtn: {
     flex: 1,
@@ -729,23 +540,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
     backgroundColor: '#fff',
+    gap: 6,
   },
-  jenisBtnLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: 6,
-    textAlign: 'center',
-  },
+  jenisBtnLabel: {fontSize: 11, fontWeight: '700', textAlign: 'center'},
 
-  // ── Tombol ajukan ─────────────────────────────────────────
-  tombolAjukan: {
-    borderRadius: 12,
-    paddingVertical: 13,
-    alignItems: 'center',
-  },
+  tombolAjukan: {borderRadius: 12, paddingVertical: 13, alignItems: 'center'},
   tombolAjukanTeks: {color: '#fff', fontWeight: 'bold', fontSize: 14},
 
-  // ── Kartu permohonan ──────────────────────────────────────
   kartu: {
     backgroundColor: '#fff',
     borderRadius: 14,
@@ -753,89 +554,29 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     elevation: 1,
   },
-  kartuHeader: {
-    flexDirection: 'row',
+  kartuHeader: {flexDirection: 'row', alignItems: 'center', padding: 12},
+  kartuIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    justifyContent: 'center',
     alignItems: 'center',
-    padding: 12,
   },
-  kartuThumb: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
-    backgroundColor: '#eceff1',
-  },
-  kartuThumbKosong: {justifyContent: 'center', alignItems: 'center'},
   kartuNama: {fontSize: 14, fontWeight: 'bold', color: C.teksUtama},
   kartuSub: {fontSize: 11, color: C.abuGelap, marginTop: 2},
+  kartuTgl: {fontSize: 10, color: C.abu, marginTop: 3},
 
-  // ── Expand box ────────────────────────────────────────────
-  expandBox: {paddingHorizontal: 12, paddingBottom: 14},
-  garis: {height: 1, backgroundColor: C.garis, marginVertical: 10},
-  expandJudul: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#37474f',
-    marginBottom: 8,
-  },
-  infoBaris: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 5,
-    gap: 8,
-  },
-  infoBarisLabel: {fontSize: 10, color: C.abu, flexShrink: 0},
-  infoBarisValue: {
-    fontSize: 12,
-    color: '#263238',
-    fontWeight: '500',
-    flexShrink: 1,
-    textAlign: 'right',
-  },
-  diajukanTeks: {fontSize: 11, color: C.abu, marginBottom: 8},
-  tombolDetail: {
-    backgroundColor: C.teksUtama,
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  tombolDetailTeks: {color: '#fff', fontWeight: 'bold', fontSize: 13},
-
-  // ── Tombol export PDF ─────────────────────────────────────
-  tombolExport: {
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: C.oranye,
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-  },
-  tombolExportTeks: {color: '#fff', fontWeight: 'bold', fontSize: 13},
-
-  // ── Foto ──────────────────────────────────────────────────
-  fotoThumb: {
-    width: 90,
-    height: 90,
-    borderRadius: 10,
-    marginRight: 8,
-    backgroundColor: '#eceff1',
-  },
-  fotoKosong: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 8,
-  },
-  fotoKosongTeks: {fontSize: 11, color: C.abu},
-
-  // ── Badge ─────────────────────────────────────────────────
   badge: {borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3},
   badgeTeks: {color: '#fff', fontSize: 9, fontWeight: 'bold'},
-  badgeKecil: {borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2},
-  badgeKecilTeks: {color: '#fff', fontSize: 8, fontWeight: 'bold'},
 
-  // ── Kosong ────────────────────────────────────────────────
+  editHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 3,
+  },
+  editHintTeks: {fontSize: 9, color: C.abuGelap, fontWeight: '600'},
+
   kosongBox: {
     alignItems: 'center',
     paddingVertical: 28,
@@ -850,96 +591,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 24,
   },
-});
-
-// ================================================================
-// STYLE KHUSUS IKON (semua dibuat dari View, tanpa emoji/library)
-// ================================================================
-const ikon = StyleSheet.create({
-  kotak: {
-    width: 22,
-    height: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  // Plus (+)
-  plusBar: {position: 'absolute', width: 16, height: 3, borderRadius: 2},
-  plusBarTegak: {transform: [{rotate: '90deg'}]},
-
-  // Perpanjangan: setengah lingkaran + panah kecil = kesan "refresh"
-  lingkaranSetengah: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 2.5,
-    borderLeftColor: 'transparent',
-    transform: [{rotate: '45deg'}],
-  },
-  panahKecil: {
-    position: 'absolute',
-    top: 1,
-    right: 2,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderBottomWidth: 5,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    transform: [{rotate: '120deg'}],
-  },
-
-  // Tumpang: dua kotak bertumpuk
-  tumpukKotak: {
-    position: 'absolute',
-    width: 13,
-    height: 13,
-    borderRadius: 3,
-    borderWidth: 2,
-  },
-  tumpukKotakBelakang: {top: 1, left: 5},
-  tumpukKotakDepan: {bottom: 1, left: 1},
-
-  // Chevron kanan (untuk kartu)
-  chevronWrap: {width: 10, height: 14, justifyContent: 'center'},
-  chevronBar: {
-    position: 'absolute',
-    width: 8,
-    height: 2,
-    borderRadius: 1,
-    right: 0,
-  },
-  chevronAtas: {top: 3, transform: [{rotate: '45deg'}]},
-  chevronBawah: {bottom: 3, transform: [{rotate: '-45deg'}]},
-
-  // Kamera sederhana (untuk placeholder foto kosong)
-  kameraLuar: {
-    width: 20,
-    height: 16,
-    borderRadius: 3,
-    borderWidth: 1.5,
-    borderColor: '#90a4ae',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  kameraLensa: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    borderWidth: 1.5,
-  },
-
-  // Ikon dokumen sederhana (untuk tombol Export PDF)
-  dokumenLuar: {
-    width: 16,
-    height: 18,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    paddingLeft: 2,
-    gap: 3,
-  },
-  dokumenGaris: {width: 10, height: 2, borderRadius: 1},
-  dokumenGarisTengah: {width: 12},
-  dokumenGarisBawah: {width: 7},
 });

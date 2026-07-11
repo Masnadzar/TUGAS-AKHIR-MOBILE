@@ -63,6 +63,15 @@ const DocBtn = ({label, file, onPress}) => (
   </TouchableOpacity>
 );
 
+const Row = ({label, value}) => (
+  <View style={{flexDirection: 'row', marginBottom: 6}}>
+    <Text style={{width: 150, color: '#888', fontSize: 13}}>{label}</Text>
+    <Text style={{flex: 1, color: '#303030', fontSize: 13, fontWeight: '500'}}>
+      {value || '-'}
+    </Text>
+  </View>
+);
+
 export default function TumpanganFormScreen({route, navigation}) {
   const linkedBurialId = route.params?.linkedBurialId ?? null;
 
@@ -91,6 +100,7 @@ export default function TumpanganFormScreen({route, navigation}) {
   const [dokKK, setDokKK] = useState(null);
   const [dokAkte, setDokAkte] = useState(null);
   const [dokSuratKematian, setDokSuratKematian] = useState(null);
+  const [dokSuratMedis, setDokSuratMedis] = useState(null); // ← BARU: surat medis
   const [dokIPTMLama, setDokIPTMLama] = useState(null); // ← khusus tumpangan
 
   const [loading, setLoading] = useState(false);
@@ -206,14 +216,21 @@ export default function TumpanganFormScreen({route, navigation}) {
     try {
       setLoading(true);
       setUploadProgress('Mengupload dokumen...');
-      const [urlKTP, urlKK, urlAkte, urlSuratKematian, urlIPTMLama] =
-        await Promise.all([
-          uploadToCloudinary(dokKTP, 'ktp_tumpangan'),
-          uploadToCloudinary(dokKK, 'kk_tumpangan'),
-          uploadToCloudinary(dokAkte, 'akte_tumpangan'),
-          uploadToCloudinary(dokSuratKematian, 'surat_kematian_tumpangan'),
-          uploadToCloudinary(dokIPTMLama, 'iptm_tumpangan'),
-        ]);
+      const [
+        urlKTP,
+        urlKK,
+        urlAkte,
+        urlSuratKematian,
+        urlSuratMedis,
+        urlIPTMLama,
+      ] = await Promise.all([
+        uploadToCloudinary(dokKTP, 'ktp_tumpangan'),
+        uploadToCloudinary(dokKK, 'kk_tumpangan'),
+        uploadToCloudinary(dokAkte, 'akte_tumpangan'),
+        uploadToCloudinary(dokSuratKematian, 'surat_kematian_tumpangan'),
+        uploadToCloudinary(dokSuratMedis, 'surat_medis_tumpangan'),
+        uploadToCloudinary(dokIPTMLama, 'iptm_tumpangan'),
+      ]);
 
       setUploadProgress('Menyimpan data...');
       await firestore()
@@ -245,6 +262,7 @@ export default function TumpanganFormScreen({route, navigation}) {
           dokKK: urlKK || null,
           dokAkte: urlAkte || null,
           dokSuratKematian: urlSuratKematian || null,
+          dokSuratMedis: urlSuratMedis || null,
           dokIPTMLama: urlIPTMLama || null,
 
           // ── Metadata & status ───────────────────────────
@@ -288,6 +306,26 @@ export default function TumpanganFormScreen({route, navigation}) {
             Terhubung dengan makam: {linkedBurial.deceasedName} (Blok{' '}
             {linkedBurial.assignedBlock || '-'})
           </Text>
+        </View>
+      )}
+
+      {/* ── Referensi data jenazah yang SUDAH ADA di makam ini ──
+          (bukan data jenazah baru yang akan tumpang -- itu diisi
+          di form di bawah). Ditampilkan agar ahli waris bisa
+          memastikan makam yang dituju benar. ── */}
+      {!loadingData && !loadError && linkedBurial && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>
+            Data Jenazah Terdahulu di Makam Ini
+          </Text>
+          <Row label="Nama" value={linkedBurial.deceasedName} />
+          <Row label="Bin/Binti" value={linkedBurial.binBinti} />
+          <Row
+            label="Hubungan dengan Ahli Waris"
+            value={linkedBurial.hubungan}
+          />
+          <Row label="Tanggal Lahir" value={linkedBurial.tglLahirJenazah} />
+          <Row label="Tanggal Wafat" value={linkedBurial.tglWafat} />
         </View>
       )}
 
@@ -390,6 +428,12 @@ export default function TumpanganFormScreen({route, navigation}) {
           file={dokSuratKematian}
           onPress={() => pickDoc(setDokSuratKematian)}
         />
+        <Text style={styles.label}>Surat Medis</Text>
+        <DocBtn
+          label="Surat Medis"
+          file={dokSuratMedis}
+          onPress={() => pickDoc(setDokSuratMedis)}
+        />
 
         <Text style={[styles.label, {color: '#2ed573', fontWeight: 'bold'}]}>
           IPTM Terdahulu * (wajib untuk tumpangan)
@@ -398,6 +442,18 @@ export default function TumpanganFormScreen({route, navigation}) {
           label="IPTM Lama"
           file={dokIPTMLama}
           onPress={() => pickDoc(setDokIPTMLama)}
+        />
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>📝 Catatan</Text>
+        <Text style={styles.label}>Catatan Tambahan (opsional)</Text>
+        <TextInput
+          style={[styles.input, {height: 80, textAlignVertical: 'top'}]}
+          value={notes}
+          onChangeText={setNotes}
+          placeholder="Catatan tambahan untuk petugas"
+          multiline
         />
       </View>
 

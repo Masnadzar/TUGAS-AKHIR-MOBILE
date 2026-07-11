@@ -1,6 +1,14 @@
 // src/screens/BurialDetailScreen.js
+// Disamakan dengan pola PengajuanDetail.js: header + status card + CRUD
+// (edit & hapus, hanya jika status === 'pending'), tapi tetap mendukung
+// upload & preview foto dokumen (KTP, KK, Akte, Surat Kematian, Surat Medis)
+// seperti versi BurialDetailScreen sebelumnya, supaya user bisa melihat
+// semua data + foto yang sudah diinput.
+
 import React, {useEffect, useState} from 'react';
 import {
+  SafeAreaView,
+  StatusBar,
   View,
   Text,
   TextInput,
@@ -11,10 +19,28 @@ import {
   ScrollView,
   Linking,
   Image,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import {launchImageLibrary} from 'react-native-image-picker';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+
+// ── Palet warna, sama dengan Home.js / PengajuanDetail.js ────────────
+const C = {
+  bg: '#0b1120',
+  hijau: '#00c853',
+  biru: '#448aff',
+  ungu: '#7c4dff',
+  oranye: '#ff9100',
+  merah: '#ff5252',
+  putih: '#f5f5f5',
+  abu: '#90a4ae',
+  abuGelap: '#546e7a',
+  garis: '#eceff1',
+  teksUtama: '#1a2535',
+};
 
 // ── Cloudinary config (sama dengan UserBurialForm) ──────────────────
 const CLOUD_NAME = 'dq59p6llb';
@@ -40,95 +66,189 @@ const uploadToCloudinary = async (fileObj, folder) => {
   return (await res.json()).secure_url;
 };
 
+const formatTglLengkap = val => {
+  if (!val) return '-';
+  try {
+    const d = val?.toDate ? val.toDate() : new Date(val);
+    return d.toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return String(val);
+  }
+};
+
+const warnaBadge = status => {
+  switch (status) {
+    case 'verified':
+      return {bg: C.hijau, label: 'Diverifikasi'};
+    case 'rejected':
+      return {bg: C.merah, label: 'Ditolak'};
+    default:
+      return {bg: C.oranye, label: 'Pending'};
+  }
+};
+
+// ── Daftar dokumen yang didukung ─────────────────────────────────────
+const DOKUMEN_LIST = [
+  {key: 'dokKTP', label: 'KTP', folder: 'ktp'},
+  {key: 'dokKK', label: 'KK', folder: 'kk'},
+  {key: 'dokAkte', label: 'Akte', folder: 'Akte'},
+  {key: 'dokSuratKematian', label: 'Surat Kematian', folder: 'surat_kematian'},
+  {key: 'dokSuratMedis', label: 'Surat Medis', folder: 'surat_medis'},
+];
+
+// ── Baris info read-only ──────────────────────────────────────────────
+const InfoBaris = ({label, value}) => (
+  <View style={styles.infoBaris}>
+    <Text style={styles.infoBarisLabel}>{label}</Text>
+    <Text style={styles.infoBarisValue}>
+      {value === undefined || value === null || value === ''
+        ? '-'
+        : String(value)}
+    </Text>
+  </View>
+);
+
+// ── Baris input edit ───────────────────────────────────────────────────
+const InputBaris = ({
+  label,
+  value,
+  onChangeText,
+  keyboardType,
+  multiline,
+  maxLength,
+}) => (
+  <View style={styles.inputWrap}>
+    <Text style={styles.inputLabel}>{label}</Text>
+    <TextInput
+      style={[styles.input, multiline && styles.inputMultiline]}
+      value={value}
+      onChangeText={onChangeText}
+      keyboardType={keyboardType || 'default'}
+      multiline={!!multiline}
+      maxLength={maxLength}
+      placeholder={`Masukkan ${label.toLowerCase()}`}
+      placeholderTextColor={C.abu}
+    />
+  </View>
+);
+
+// ================================================================
+// MAIN SCREEN
+// ================================================================
 export default function BurialDetailScreen({route, navigation}) {
   const {id} = route.params || {};
+  const warna = C.hijau;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [data, setData] = useState(null);
 
-  // ── Edit state: Data Jenazah ────────────────────────────────────
-  const [deceasedName, setDeceasedName] = useState('');
-  const [nikJenazah, setNikJenazah] = useState('');
-  const [binBinti, setBinBinti] = useState('');
-  const [jenisKelamin, setJenisKelamin] = useState('Laki-laki');
-  const [agama, setAgama] = useState('');
-  const [tglLahirJenazah, setTglLahirJenazah] = useState('');
-  const [tglWafat, setTglWafat] = useState('');
-  const [penyebabKematian, setPenyebabKematian] = useState('');
+  // ── Form state (semua field yang bisa diedit) ───────────────────
+  const [form, setForm] = useState({
+    deceasedName: '',
+    nikJenazah: '',
+    binBinti: '',
+    jenisKelamin: 'Laki-laki',
+    agama: '',
+    tglLahirJenazah: '',
+    tglWafat: '',
+    penyebabKematian: '',
+    heirName: '',
+    nikAhliWaris: '',
+    noTelepon: '',
+    hubungan: '',
+    tglLahirWaris: '',
+    alamat: '',
+    burialDate: '',
+    notes: '',
+  });
 
-  // ── Edit state: Data Ahli Waris ─────────────────────────────────
-  const [heirName, setHeirName] = useState('');
-  const [nikAhliWaris, setNikAhliWaris] = useState('');
-  const [noTelepon, setNoTelepon] = useState('');
-  const [hubungan, setHubungan] = useState('');
-  const [tglLahirWaris, setTglLahirWaris] = useState('');
-  const [alamat, setAlamat] = useState('');
+  // ── Dokumen baru (opsional saat edit) ────────────────────────────
+  const [newDocs, setNewDocs] = useState({}); // { dokKTP: {uri,name,type}, ... }
 
-  // ── Edit state: Data Pemakaman ──────────────────────────────────
-  const [burialDate, setBurialDate] = useState('');
-  const [notes, setNotes] = useState('');
-
-  // ── Edit state: Dokumen baru (opsional saat edit) ───────────────
-  const [dokKTP, setDokKTP] = useState(null);
-  const [dokKK, setDokKK] = useState(null);
-  const [dokAkte, setDokAkte] = useState(null);
-  const [dokSuratKematian, setDokSuratKematian] = useState(null);
-  const [dokSuratMedis, setDokSuratMedis] = useState(null);
-
-  // ── Load data dari Firestore ────────────────────────────────────
+  // ── Validasi params ──────────────────────────────────────────────
   useEffect(() => {
     if (!id) {
-      navigation.goBack();
-      return;
+      Alert.alert('Error', 'Data permohonan tidak valid.', [
+        {text: 'OK', onPress: () => navigation.goBack()},
+      ]);
     }
+  }, [id]);
+
+  // ── Load data dari Firestore (realtime) ─────────────────────────
+  useEffect(() => {
+    if (!id) return;
     const unsub = firestore()
       .collection('burials')
       .doc(id)
       .onSnapshot(
         snap => {
-          if (snap.exists) {
-            const d = snap.data();
-            setData({id: snap.id, ...d});
-            // isi semua state edit
-            setDeceasedName(d.deceasedName || '');
-            setNikJenazah(d.nikJenazah || '');
-            setBinBinti(d.binBinti || '');
-            setJenisKelamin(d.jenisKelamin || 'Laki-laki');
-            setAgama(d.agama || '');
-            setTglLahirJenazah(d.tglLahirJenazah || '');
-            setTglWafat(d.tglWafat || '');
-            setPenyebabKematian(d.penyebabKematian || '');
-            setHeirName(d.heirName || '');
-            setNikAhliWaris(d.nikAhliWaris || '');
-            setNoTelepon(d.noTelepon || '');
-            setTglLahirWaris(d.tglLahirWaris || '');
-            setHubungan(d.hubungan || '');
-            setAlamat(d.alamat || '');
-            setBurialDate(d.burialDate || '');
-            setNotes(d.notes || '');
+          if (!snap.exists) {
+            setLoading(false);
+            Alert.alert('Error', 'Data tidak ditemukan.', [
+              {text: 'OK', onPress: () => navigation.goBack()},
+            ]);
+            return;
           }
+          const d = {id: snap.id, ...snap.data()};
+          setData(d);
+          // Isi form hanya kalau bukan sedang edit, supaya realtime update
+          // tidak menimpa input yang sedang diketik user.
+          setForm(prev =>
+            editMode
+              ? prev
+              : {
+                  deceasedName: d.deceasedName || '',
+                  nikJenazah: d.nikJenazah || '',
+                  binBinti: d.binBinti || '',
+                  jenisKelamin: d.jenisKelamin || 'Laki-laki',
+                  agama: d.agama || '',
+                  tglLahirJenazah: d.tglLahirJenazah || '',
+                  tglWafat: d.tglWafat || '',
+                  penyebabKematian: d.penyebabKematian || '',
+                  heirName: d.heirName || '',
+                  nikAhliWaris: d.nikAhliWaris || '',
+                  noTelepon: d.noTelepon || '',
+                  hubungan: d.hubungan || '',
+                  tglLahirWaris: d.tglLahirWaris || '',
+                  alamat: d.alamat || '',
+                  burialDate: d.burialDate || '',
+                  notes: d.notes || '',
+                },
+          );
           setLoading(false);
         },
         err => {
-          console.log(err);
+          console.log('[BurialDetail] snapshot err', err);
           setLoading(false);
+          Alert.alert('Error', 'Gagal memuat data.');
         },
       );
     return () => unsub();
-  }, [id, navigation]);
+  }, [id]);
 
   // ── Auto-format tanggal ─────────────────────────────────────────
-  const formatTanggal = (text, setter) => {
+  const formatTanggal = (text, key) => {
     let val = text.replace(/[^0-9]/g, '');
     if (val.length > 2) val = val.slice(0, 2) + '-' + val.slice(2);
     if (val.length > 5) val = val.slice(0, 5) + '-' + val.slice(5);
-    setter(val.slice(0, 10));
+    handleChangeField(key, val.slice(0, 10));
+  };
+
+  const handleChangeField = (key, val) => {
+    setForm(prev => ({...prev, [key]: val}));
   };
 
   // ── Pilih foto dokumen ──────────────────────────────────────────
-  const pickDoc = setter => {
+  const pickDoc = docKey => {
     launchImageLibrary(
       {mediaType: 'photo', includeBase64: false, quality: 0.8},
       res => {
@@ -139,11 +259,14 @@ export default function BurialDetailScreen({route, navigation}) {
         }
         const asset = res.assets?.[0];
         if (asset)
-          setter({
-            uri: asset.uri,
-            name: asset.fileName || 'upload.jpg',
-            type: asset.type || 'image/jpeg',
-          });
+          setNewDocs(prev => ({
+            ...prev,
+            [docKey]: {
+              uri: asset.uri,
+              name: asset.fileName || 'upload.jpg',
+              type: asset.type || 'image/jpeg',
+            },
+          }));
       },
     );
   };
@@ -159,11 +282,50 @@ export default function BurialDetailScreen({route, navigation}) {
     else Alert.alert('Error', 'Tidak bisa membuka URL dokumen.');
   };
 
-  // ── Simpan perubahan ────────────────────────────────────────────
-  const handleSave = async () => {
-    if (!deceasedName.trim() || !heirName.trim() || !burialDate.trim()) {
+  // ── Mulai edit ────────────────────────────────────────────────────
+  const handleMulaiEdit = () => {
+    if (data?.status !== 'pending') {
       Alert.alert(
-        'Validasi',
+        'Tidak Bisa Diedit',
+        'Data yang sudah diverifikasi atau ditolak tidak dapat diubah lagi.',
+      );
+      return;
+    }
+    setEditMode(true);
+  };
+
+  const handleBatalEdit = () => {
+    setForm({
+      deceasedName: data.deceasedName || '',
+      nikJenazah: data.nikJenazah || '',
+      binBinti: data.binBinti || '',
+      jenisKelamin: data.jenisKelamin || 'Laki-laki',
+      agama: data.agama || '',
+      tglLahirJenazah: data.tglLahirJenazah || '',
+      tglWafat: data.tglWafat || '',
+      penyebabKematian: data.penyebabKematian || '',
+      heirName: data.heirName || '',
+      nikAhliWaris: data.nikAhliWaris || '',
+      noTelepon: data.noTelepon || '',
+      hubungan: data.hubungan || '',
+      tglLahirWaris: data.tglLahirWaris || '',
+      alamat: data.alamat || '',
+      burialDate: data.burialDate || '',
+      notes: data.notes || '',
+    });
+    setNewDocs({});
+    setEditMode(false);
+  };
+
+  // ── Simpan perubahan ────────────────────────────────────────────
+  const handleSimpan = async () => {
+    if (
+      !form.deceasedName.trim() ||
+      !form.heirName.trim() ||
+      !form.burialDate.trim()
+    ) {
+      Alert.alert(
+        'Lengkapi Data',
         'Nama jenazah, ahli waris, dan tanggal pemakaman wajib diisi.',
       );
       return;
@@ -175,593 +337,691 @@ export default function BurialDetailScreen({route, navigation}) {
       );
       return;
     }
-    try {
-      setSaving(true);
 
-      // Upload dokumen baru kalau ada yang diganti
-      const [urlKTP, urlKK, urlAkte, urlSuratKematian, urlSuratMedis] =
-        await Promise.all([
-          dokKTP
-            ? uploadToCloudinary(dokKTP, 'ktp')
-            : Promise.resolve(data.dokKTP),
-          dokKK ? uploadToCloudinary(dokKK, 'kk') : Promise.resolve(data.dokKK),
-          dokAkte
-            ? uploadToCloudinary(dokAkte, 'Akte')
-            : Promise.resolve(data.dokAkte),
-          dokSuratKematian
-            ? uploadToCloudinary(dokSuratKematian, 'surat_kematian')
-            : Promise.resolve(data.dokSuratKematian),
-          dokSuratMedis
-            ? uploadToCloudinary(dokSuratMedis, 'surat_medis')
-            : Promise.resolve(data.dokSuratMedis),
-        ]);
+    setSaving(true);
+    try {
+      // Upload dokumen baru kalau ada yang diganti, sisanya pakai URL lama
+      const uploadedEntries = await Promise.all(
+        DOKUMEN_LIST.map(async ({key, folder}) => {
+          if (newDocs[key]) {
+            const url = await uploadToCloudinary(newDocs[key], folder);
+            return [key, url];
+          }
+          return [key, data[key] || null];
+        }),
+      );
+      const dokUrls = Object.fromEntries(uploadedEntries);
+
+      const payload = {
+        deceasedName: form.deceasedName.trim(),
+        nikJenazah: form.nikJenazah.trim(),
+        binBinti: form.binBinti.trim(),
+        jenisKelamin: form.jenisKelamin,
+        agama: form.agama.trim(),
+        tglLahirJenazah: form.tglLahirJenazah.trim(),
+        tglWafat: form.tglWafat.trim(),
+        penyebabKematian: form.penyebabKematian.trim(),
+        heirName: form.heirName.trim(),
+        nikAhliWaris: form.nikAhliWaris.trim(),
+        noTelepon: form.noTelepon.trim(),
+        hubungan: form.hubungan.trim(),
+        tglLahirWaris: form.tglLahirWaris.trim(),
+        alamat: form.alamat.trim(),
+        burialDate: form.burialDate.trim(),
+        notes: form.notes.trim(),
+        ...dokUrls,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      };
+
+      console.log('[BurialDetail] update path: burials', id);
+      console.log('[BurialDetail] update payload:', payload);
 
       await firestore()
         .collection('burials')
         .doc(id)
-        .set(
-          {
-            // Data jenazah
-            deceasedName: deceasedName.trim(),
-            nikJenazah: nikJenazah.trim(),
-            binBinti: binBinti.trim(),
-            jenisKelamin: jenisKelamin,
-            agama: agama.trim(),
-            tglLahirJenazah: tglLahirJenazah.trim(),
-            tglWafat: tglWafat.trim(),
-            penyebabKematian: penyebabKematian.trim(),
-            // Data ahli waris
-            heirName: heirName.trim(),
-            nikAhliWaris: nikAhliWaris.trim(),
-            noTelepon: noTelepon.trim(),
-            hubungan: hubungan.trim(),
-            tglLahirWaris: tglLahirWaris.trim(),
-            alamat: alamat.trim(),
-            // Data pemakaman
-            burialDate: burialDate.trim(),
-            notes: notes.trim(),
-            // Dokumen
-            dokKTP: urlKTP || null,
-            dokKK: urlKK || null,
-            dokAkte: urlAkte || null,
-            dokSuratKematian: urlSuratKematian || null,
-            dokSuratMedis: urlSuratMedis || null,
-            // Timestamp update
-            updatedAt: firestore.FieldValue.serverTimestamp(),
-          },
-          {merge: true},
-        );
+        .set(payload, {merge: true});
 
-      Alert.alert('Sukses', 'Perubahan berhasil disimpan.');
-      setEditMode(false);
-      setDokKTP(null);
-      setDokKK(null);
-      setDokAkte(null);
-      setDokSuratKematian(null);
-      setDokSuratMedis(null);
-      navigation.goBack();
-    } catch (err) {
-      console.log(err);
-      Alert.alert('Error', 'Gagal menyimpan: ' + err.message);
-    } finally {
       setSaving(false);
+      setEditMode(false);
+      setNewDocs({});
+      Alert.alert('Berhasil', 'Perubahan data berhasil disimpan.');
+    } catch (err) {
+      console.log('[BurialDetail] save err', err.code, err.message, err);
+      setSaving(false);
+      Alert.alert(
+        'Gagal Menyimpan',
+        `${err.code || 'unknown'}: ${
+          err.message || 'Terjadi kesalahan tidak diketahui.'
+        }`,
+      );
     }
   };
 
+  // ── Hapus data ────────────────────────────────────────────────────
+  const handleHapus = () => {
+    if (data?.status !== 'pending') {
+      Alert.alert(
+        'Tidak Bisa Dihapus',
+        'Data yang sudah diverifikasi atau ditolak tidak dapat dihapus lagi.',
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Hapus Permohonan',
+      'Yakin ingin menghapus permohonan makam baru ini? Tindakan ini tidak dapat dibatalkan.',
+      [
+        {text: 'Batal', style: 'cancel'},
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await firestore().collection('burials').doc(id).delete();
+              setDeleting(false);
+              navigation.goBack();
+            } catch (err) {
+              console.log(
+                '[BurialDetail] delete err',
+                err.code,
+                err.message,
+                err,
+              );
+              setDeleting(false);
+              Alert.alert(
+                'Gagal Menghapus',
+                `${err.code || 'unknown'}: ${
+                  err.message || 'Terjadi kesalahan tidak diketahui.'
+                }`,
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
   // ── Loading & null guard ────────────────────────────────────────
-  if (loading)
+  if (loading) {
     return (
-      <View style={styles.centerScreen}>
-        <ActivityIndicator size="large" color="#2f6fed" />
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar backgroundColor={C.bg} barStyle="light-content" />
+        <View style={styles.pusatLayar}>
+          <ActivityIndicator size="large" color={warna} />
+          <Text style={styles.loadingTeks}>Memuat data...</Text>
+        </View>
+      </SafeAreaView>
     );
-  if (!data)
-    return (
-      <View style={styles.centerScreen}>
-        <Text style={{color: '#8a92a2'}}>Data tidak ditemukan.</Text>
-      </View>
-    );
+  }
+  if (!data) return null;
 
   const isOwner = auth().currentUser?.uid === data.createdBy;
-  const canEdit = isOwner && data.status === 'pending';
-
-  // ── Konfigurasi status ───────────────────────────────────────────
-  const statusCfg = {
-    pending: {
-      bg: '#fff8e6',
-      dot: '#f59f00',
-      txt: '#a06b00',
-      label: 'Menunggu Verifikasi',
-    },
-    verified: {
-      bg: '#eafaf3',
-      dot: '#12b886',
-      txt: '#0c8f68',
-      label: 'Terverifikasi',
-    },
-    rejected: {bg: '#fdedec', dot: '#e03131', txt: '#c0392b', label: 'Ditolak'},
-  };
-  const sc = statusCfg[data.status] || statusCfg.pending;
-
-  // ── Sub-komponen ────────────────────────────────────────────────
-  const Row = ({label, value}) => (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value || '-'}</Text>
-    </View>
-  );
-
-  const SectionTitle = ({title, color}) => (
-    <View style={styles.cardHeader}>
-      <View style={[styles.cardAccent, {backgroundColor: color}]} />
-      <Text style={styles.sectionTitle}>{title}</Text>
-    </View>
-  );
+  const bisaEdit = isOwner && data.status === 'pending';
+  const badge = warnaBadge(data.status);
 
   const JKButton = ({label}) => (
     <TouchableOpacity
-      onPress={() => setJenisKelamin(label)}
-      style={[styles.jkBtn, jenisKelamin === label && styles.jkBtnActive]}>
+      onPress={() => handleChangeField('jenisKelamin', label)}
+      style={[styles.jkBtn, form.jenisKelamin === label && styles.jkBtnActive]}>
       <Text
-        style={[styles.jkTxt, jenisKelamin === label && styles.jkTxtActive]}>
+        style={[
+          styles.jkTxt,
+          form.jenisKelamin === label && styles.jkTxtActive,
+        ]}>
         {label}
       </Text>
     </TouchableOpacity>
   );
 
-  const EditInput = ({
-    label,
-    value,
-    onChangeText,
-    placeholder,
-    keyboardType,
-    maxLength,
-    multiline,
-  }) => (
-    <>
-      <Text style={styles.editLabel}>{label}</Text>
-      <TextInput
-        style={[
-          styles.editInput,
-          multiline && {height: 70, textAlignVertical: 'top'},
-        ]}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor="#a3a9b7"
-        keyboardType={keyboardType || 'default'}
-        maxLength={maxLength}
-        multiline={multiline}
-      />
-    </>
-  );
-
   // ════════════════════════════════════════════════════════════════
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{padding: 16, paddingBottom: 50}}>
-      {/* ══ HEADER STATUS ══ */}
-      <View style={[styles.statusBanner, {backgroundColor: sc.bg}]}>
-        <View style={[styles.statusDot, {backgroundColor: sc.dot}]} />
-        <Text style={[styles.statusLabel, {color: sc.txt}]}>{sc.label}</Text>
-      </View>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar backgroundColor={C.bg} barStyle="light-content" />
 
-      {/* ══ SECTION 1: DATA JENAZAH ══ */}
-      <View style={styles.card}>
-        <SectionTitle title="Data Jenazah" color="#2f6fed" />
-        {!editMode ? (
-          <>
-            <Row label="Nama" value={data.deceasedName} />
-            <Row label="NIK" value={data.nikJenazah} />
-            <Row label="Bin/Binti" value={data.binBinti} />
-            <Row label="Jenis Kelamin" value={data.jenisKelamin} />
-            <Row label="Agama" value={data.agama} />
-            <Row label="Tanggal Lahir" value={data.tglLahirJenazah} />
-            <Row label="Tanggal Wafat" value={data.tglWafat} />
-            <Row label="Penyebab" value={data.penyebabKematian} />
-          </>
-        ) : (
-          <>
-            <EditInput
-              label="Nama Jenazah *"
-              value={deceasedName}
-              onChangeText={setDeceasedName}
-              placeholder="Nama lengkap jenazah"
-            />
-            <EditInput
-              label="NIK Jenazah * (16 digit)"
-              value={nikJenazah}
-              onChangeText={setNikJenazah}
-              placeholder="3175010101900001"
-              keyboardType="number-pad"
-              maxLength={16}
-            />
-            <EditInput
-              label="Bin / Binti *"
-              value={binBinti}
-              onChangeText={setBinBinti}
-              placeholder="bin Ahmad / binti Siti"
-            />
-            <Text style={styles.editLabel}>Jenis Kelamin *</Text>
-            <View style={styles.jkRow}>
-              <JKButton label="Laki-laki" />
-              <JKButton label="Perempuan" />
-            </View>
-            <EditInput
-              label="Agama *"
-              value={agama}
-              onChangeText={setAgama}
-              placeholder="Agama jenazah"
-            />
-            <EditInput
-              label="Tanggal Lahir (DD-MM-YYYY)"
-              value={tglLahirJenazah}
-              onChangeText={t => formatTanggal(t, setTglLahirJenazah)}
-              placeholder="10-05-1945"
-              keyboardType="number-pad"
-              maxLength={10}
-            />
-            <EditInput
-              label="Tanggal Wafat (DD-MM-YYYY)"
-              value={tglWafat}
-              onChangeText={t => formatTanggal(t, setTglWafat)}
-              placeholder="05-12-2025"
-              keyboardType="number-pad"
-              maxLength={10}
-            />
-            <EditInput
-              label="Penyebab Kematian *"
-              value={penyebabKematian}
-              onChangeText={setPenyebabKematian}
-              placeholder="Contoh: Sakit jantung"
-            />
-          </>
+      {/* ── HEADER ── */}
+      <View style={[styles.header, {backgroundColor: C.bg}]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={24} color={C.putih} />
+        </TouchableOpacity>
+        <View style={{flex: 1}}>
+          <Text style={styles.headerJudul}>Detail Makam Baru</Text>
+          <Text style={styles.headerSub} numberOfLines={1}>
+            {data.deceasedName || data.heirName || '(tanpa nama)'}
+          </Text>
+        </View>
+        {!editMode && bisaEdit && (
+          <View style={{flexDirection: 'row', gap: 8}}>
+            <TouchableOpacity
+              onPress={handleMulaiEdit}
+              style={styles.editIconBtn}>
+              <Ionicons name="create-outline" size={20} color={C.putih} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleHapus}
+              style={styles.editIconBtn}
+              disabled={deleting}>
+              {deleting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="trash-outline" size={20} color={C.merah} />
+              )}
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
-      {/* ══ SECTION 2: DATA AHLI WARIS ══ */}
-      <View style={styles.card}>
-        <SectionTitle title="Data Ahli Waris" color="#12b886" />
-        {!editMode ? (
-          <>
-            <Row label="Nama" value={data.heirName} />
-            <Row label="NIK" value={data.nikAhliWaris} />
-            <Row label="No. Telepon" value={data.noTelepon} />
-            <Row label="Hubungan" value={data.hubungan} />
-            <Row label="Tanggal Lahir" value={data.tglLahirWaris} />
-            <Row label="Alamat" value={data.alamat} />
-          </>
-        ) : (
-          <>
-            <EditInput
-              label="Nama Ahli Waris *"
-              value={heirName}
-              onChangeText={setHeirName}
-              placeholder="Nama lengkap ahli waris"
-            />
-            <EditInput
-              label="NIK Ahli Waris * (16 digit)"
-              value={nikAhliWaris}
-              onChangeText={setNikAhliWaris}
-              placeholder="3175010101900002"
-              keyboardType="number-pad"
-              maxLength={16}
-            />
-            <EditInput
-              label="No. Telepon *"
-              value={noTelepon}
-              onChangeText={setNoTelepon}
-              placeholder="08123456789"
-              keyboardType="phone-pad"
-              maxLength={13}
-            />
-            <EditInput
-              label="Hubungan dengan Jenazah *"
-              value={hubungan}
-              onChangeText={setHubungan}
-              placeholder="Anak, Suami, Istri, Saudara"
-            />
-            <EditInput
-              label="Tanggal Lahir (DD-MM-YYYY)"
-              value={tglLahirWaris}
-              onChangeText={t => formatTanggal(t, setTglLahirWaris)}
-              placeholder="10-05-1945"
-              keyboardType="number-pad"
-              maxLength={10}
-            />
-            <EditInput
-              label="Alamat"
-              value={alamat}
-              onChangeText={setAlamat}
-              placeholder="Alamat saat ini"
-              multiline
-            />
-          </>
-        )}
-      </View>
-
-      {/* ══ SECTION 3: DATA PEMAKAMAN ══ */}
-      <View style={styles.card}>
-        <SectionTitle title="Data Pemakaman" color="#f59f00" />
-        <Row label="Tgl Pemakaman" value={data.burialDate} />
-        <Row label="Catatan" value={data.notes || '-'} />
-        {data.assignedBlock ? (
-          <>
-            <View style={styles.divider} />
-            <Text style={styles.lokasiHeader}>Lokasi Makam (dari Admin)</Text>
-            <Row label="Block" value={data.assignedBlock} />
-            <Row label="Nomor Makam" value={data.assignedGraveNumber} />
-            <Row label="Catatan Admin" value={data.adminNote || '-'} />
-          </>
-        ) : null}
-        {editMode ? (
-          <>
-            <View style={styles.divider} />
-            <EditInput
-              label="Tanggal Pemakaman (DD-MM-YYYY)"
-              value={burialDate}
-              onChangeText={t => formatTanggal(t, setBurialDate)}
-              placeholder="06-12-2025"
-              keyboardType="number-pad"
-              maxLength={10}
-            />
-            <EditInput
-              label="Catatan (opsional)"
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Catatan / patokan lokasi"
-              multiline
-            />
-          </>
-        ) : null}
-      </View>
-
-      {/* ══ SECTION 4: DOKUMEN ══ */}
-      <View style={styles.card}>
-        <SectionTitle title="Dokumen Pendukung" color="#845ef7" />
-
-        {[
-          {
-            label: 'KTP',
-            urlKey: 'dokKTP',
-            newFile: editMode ? dokKTP : null,
-            setter: setDokKTP,
-          },
-          {
-            label: 'KK',
-            urlKey: 'dokKK',
-            newFile: editMode ? dokKK : null,
-            setter: setDokKK,
-          },
-          {
-            label: 'Akte',
-            urlKey: 'dokAkte',
-            newFile: editMode ? dokAkte : null,
-            setter: setDokAkte,
-          },
-          {
-            label: 'Surat Kematian',
-            urlKey: 'dokSuratKematian',
-            newFile: editMode ? dokSuratKematian : null,
-            setter: setDokSuratKematian,
-          },
-          {
-            label: 'Surat Medis',
-            urlKey: 'dokSuratMedis',
-            newFile: editMode ? dokSuratMedis : null,
-            setter: setDokSuratMedis,
-          },
-        ].map(({label, urlKey, newFile, setter}) => {
-          const existingUrl = data[urlKey];
-          // Foto yang diinput user (baru dipilih ATAU sudah tersimpan) selalu ditampilkan
-          const previewUri = newFile ? newFile.uri : existingUrl || null;
-          const hasDoc = !!previewUri;
-
-          return (
-            <View key={label} style={styles.docItem}>
-              <View style={styles.docItemHeader}>
-                <Text style={styles.docItemLabel}>{label}</Text>
-                <View
-                  style={[
-                    styles.docStatusBadge,
-                    hasDoc ? styles.docBadgeAda : styles.docBadgeTidak,
-                  ]}>
-                  <View
-                    style={[
-                      styles.docStatusDot,
-                      {
-                        backgroundColor: newFile
-                          ? '#f59f00'
-                          : hasDoc
-                          ? '#12b886'
-                          : '#c1c7d0',
-                      },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.docStatusTxt,
-                      hasDoc ? styles.docBadgeTxtAda : styles.docBadgeTxtTidak,
-                    ]}>
-                    {newFile ? 'Diperbarui' : hasDoc ? 'Ada' : 'Belum ada'}
-                  </Text>
-                </View>
+      <KeyboardAvoidingView
+        style={{flex: 1}}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={{padding: 14, paddingBottom: 40}}
+          showsVerticalScrollIndicator={false}>
+          {/* ── STATUS ── */}
+          <View style={styles.statusCard}>
+            <View style={styles.statusBaris}>
+              <View style={[styles.iconWrap, {backgroundColor: warna + '18'}]}>
+                <Ionicons name="add-circle-outline" size={24} color={warna} />
               </View>
+              <View style={{flex: 1, marginLeft: 12}}>
+                <Text style={styles.statusJenis}>Makam Baru</Text>
+                <Text style={styles.statusTgl}>
+                  Diajukan {formatTglLengkap(data.createdAt)}
+                </Text>
+              </View>
+              <View style={[styles.badge, {backgroundColor: badge.bg}]}>
+                <Text style={styles.badgeTeks}>{badge.label}</Text>
+              </View>
+            </View>
 
-              {/* Preview foto yang telah diinput user */}
-              {previewUri ? (
+            {!bisaEdit && (
+              <View style={styles.peringatanBox}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={14}
+                  color={C.abuGelap}
+                />
+                <Text style={styles.peringatanTeks}>
+                  {data.status === 'verified'
+                    ? 'Data ini sudah diverifikasi dan tidak dapat diubah.'
+                    : data.status === 'rejected'
+                    ? 'Data ini sudah ditolak dan tidak dapat diubah.'
+                    : 'Anda tidak memiliki akses untuk mengubah data ini.'}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* ── SECTION 1: DATA JENAZAH ── */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionJudul}>Data Jenazah</Text>
+            {!editMode ? (
+              <>
+                <InfoBaris label="Nama" value={data.deceasedName} />
+                <InfoBaris label="NIK" value={data.nikJenazah} />
+                <InfoBaris label="Bin/Binti" value={data.binBinti} />
+                <InfoBaris label="Jenis Kelamin" value={data.jenisKelamin} />
+                <InfoBaris label="Agama" value={data.agama} />
+                <InfoBaris label="Tanggal Lahir" value={data.tglLahirJenazah} />
+                <InfoBaris label="Tanggal Wafat" value={data.tglWafat} />
+                <InfoBaris label="Penyebab" value={data.penyebabKematian} />
+              </>
+            ) : (
+              <>
+                <InputBaris
+                  label="Nama Jenazah *"
+                  value={form.deceasedName}
+                  onChangeText={t => handleChangeField('deceasedName', t)}
+                />
+                <InputBaris
+                  label="NIK Jenazah * (16 digit)"
+                  value={form.nikJenazah}
+                  onChangeText={t => handleChangeField('nikJenazah', t)}
+                  keyboardType="number-pad"
+                  maxLength={16}
+                />
+                <InputBaris
+                  label="Bin / Binti *"
+                  value={form.binBinti}
+                  onChangeText={t => handleChangeField('binBinti', t)}
+                />
+                <Text style={styles.inputLabel}>Jenis Kelamin *</Text>
+                <View style={styles.jkRow}>
+                  <JKButton label="Laki-laki" />
+                  <JKButton label="Perempuan" />
+                </View>
+                <View style={{height: 10}} />
+                <InputBaris
+                  label="Agama *"
+                  value={form.agama}
+                  onChangeText={t => handleChangeField('agama', t)}
+                />
+                <InputBaris
+                  label="Tanggal Lahir (DD-MM-YYYY)"
+                  value={form.tglLahirJenazah}
+                  onChangeText={t => formatTanggal(t, 'tglLahirJenazah')}
+                  keyboardType="number-pad"
+                  maxLength={10}
+                />
+                <InputBaris
+                  label="Tanggal Wafat (DD-MM-YYYY)"
+                  value={form.tglWafat}
+                  onChangeText={t => formatTanggal(t, 'tglWafat')}
+                  keyboardType="number-pad"
+                  maxLength={10}
+                />
+                <InputBaris
+                  label="Penyebab Kematian *"
+                  value={form.penyebabKematian}
+                  onChangeText={t => handleChangeField('penyebabKematian', t)}
+                />
+              </>
+            )}
+          </View>
+
+          {/* ── SECTION 2: DATA AHLI WARIS ── */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionJudul}>Data Ahli Waris</Text>
+            {!editMode ? (
+              <>
+                <InfoBaris label="Nama" value={data.heirName} />
+                <InfoBaris label="NIK" value={data.nikAhliWaris} />
+                <InfoBaris label="No. Telepon" value={data.noTelepon} />
+                <InfoBaris label="Hubungan" value={data.hubungan} />
+                <InfoBaris label="Tanggal Lahir" value={data.tglLahirWaris} />
+                <InfoBaris label="Alamat" value={data.alamat} />
+              </>
+            ) : (
+              <>
+                <InputBaris
+                  label="Nama Ahli Waris *"
+                  value={form.heirName}
+                  onChangeText={t => handleChangeField('heirName', t)}
+                />
+                <InputBaris
+                  label="NIK Ahli Waris * (16 digit)"
+                  value={form.nikAhliWaris}
+                  onChangeText={t => handleChangeField('nikAhliWaris', t)}
+                  keyboardType="number-pad"
+                  maxLength={16}
+                />
+                <InputBaris
+                  label="No. Telepon *"
+                  value={form.noTelepon}
+                  onChangeText={t => handleChangeField('noTelepon', t)}
+                  keyboardType="phone-pad"
+                  maxLength={13}
+                />
+                <InputBaris
+                  label="Hubungan dengan Jenazah *"
+                  value={form.hubungan}
+                  onChangeText={t => handleChangeField('hubungan', t)}
+                />
+                <InputBaris
+                  label="Tanggal Lahir (DD-MM-YYYY)"
+                  value={form.tglLahirWaris}
+                  onChangeText={t => formatTanggal(t, 'tglLahirWaris')}
+                  keyboardType="number-pad"
+                  maxLength={10}
+                />
+                <InputBaris
+                  label="Alamat"
+                  value={form.alamat}
+                  onChangeText={t => handleChangeField('alamat', t)}
+                  multiline
+                />
+              </>
+            )}
+          </View>
+
+          {/* ── SECTION 3: DATA PEMAKAMAN ── */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionJudul}>Data Pemakaman</Text>
+            {!editMode ? (
+              <>
+                <InfoBaris label="Tgl Pemakaman" value={data.burialDate} />
+                <InfoBaris label="Catatan" value={data.notes} />
+              </>
+            ) : (
+              <>
+                <InputBaris
+                  label="Tanggal Pemakaman (DD-MM-YYYY) *"
+                  value={form.burialDate}
+                  onChangeText={t => formatTanggal(t, 'burialDate')}
+                  keyboardType="number-pad"
+                  maxLength={10}
+                />
+                <InputBaris
+                  label="Catatan (opsional)"
+                  value={form.notes}
+                  onChangeText={t => handleChangeField('notes', t)}
+                  multiline
+                />
+              </>
+            )}
+
+            {data.assignedBlock ? (
+              <>
+                <View style={styles.divider} />
+                <Text style={styles.lokasiHeader}>
+                  Lokasi Makam (dari Admin)
+                </Text>
+                <InfoBaris label="Block" value={data.assignedBlock} />
+                <InfoBaris
+                  label="Nomor Makam"
+                  value={data.assignedGraveNumber}
+                />
+                <InfoBaris label="Catatan Admin" value={data.adminNote} />
+              </>
+            ) : null}
+          </View>
+
+          {/* ── SECTION 4: DOKUMEN (dengan preview foto) ── */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionJudul}>Dokumen Pendukung</Text>
+
+            {DOKUMEN_LIST.map(({key, label}) => {
+              const existingUrl = data[key];
+              const newFile = editMode ? newDocs[key] : null;
+              const previewUri = newFile ? newFile.uri : existingUrl || null;
+              const hasDoc = !!previewUri;
+
+              return (
+                <View key={key} style={styles.docItem}>
+                  <View style={styles.docItemHeader}>
+                    <Text style={styles.docItemLabel}>{label}</Text>
+                    <View
+                      style={[
+                        styles.docStatusBadge,
+                        hasDoc ? styles.docBadgeAda : styles.docBadgeTidak,
+                      ]}>
+                      <View
+                        style={[
+                          styles.docStatusDot,
+                          {
+                            backgroundColor: newFile
+                              ? C.oranye
+                              : hasDoc
+                              ? C.hijau
+                              : '#c1c7d0',
+                          },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.docStatusTxt,
+                          hasDoc
+                            ? styles.docBadgeTxtAda
+                            : styles.docBadgeTxtTidak,
+                        ]}>
+                        {newFile ? 'Diperbarui' : hasDoc ? 'Ada' : 'Belum ada'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Preview foto yang telah diinput user */}
+                  {previewUri ? (
+                    <TouchableOpacity
+                      onPress={() => !editMode && bukaDoc(existingUrl, label)}
+                      activeOpacity={editMode ? 1 : 0.7}>
+                      <Image
+                        source={{uri: previewUri}}
+                        style={styles.docPreview}
+                        resizeMode="cover"
+                      />
+                      {!editMode && (
+                        <Text style={styles.docTapHint}>
+                          Ketuk untuk membuka dokumen
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.docEmpty}>
+                      <Text style={styles.docEmptyTxt}>Belum diunggah</Text>
+                    </View>
+                  )}
+
+                  {editMode && (
+                    <TouchableOpacity
+                      style={[
+                        styles.docGantiBtn,
+                        newFile && styles.docGantiBtnUpdate,
+                      ]}
+                      onPress={() => pickDoc(key)}>
+                      <Text style={styles.docGantiBtnTxt}>
+                        {newFile
+                          ? 'Ganti lagi'
+                          : hasDoc
+                          ? 'Ganti Foto'
+                          : 'Pilih Foto'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          {/* ── TOMBOL AKSI ── */}
+          {editMode ? (
+            <View style={styles.tombolBaris}>
+              <TouchableOpacity
+                style={styles.tombolSekunder}
+                onPress={handleBatalEdit}
+                disabled={saving}>
+                <Text style={styles.tombolSekunderTeks}>Batal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tombolUtama, {backgroundColor: warna}]}
+                onPress={handleSimpan}
+                disabled={saving}>
+                {saving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.tombolUtamaTeks}>Simpan Perubahan</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            bisaEdit && (
+              <View style={[styles.tombolBaris, {marginTop: 4}]}>
                 <TouchableOpacity
-                  onPress={() => !editMode && bukaDoc(existingUrl, label)}
-                  activeOpacity={editMode ? 1 : 0.7}>
-                  <Image
-                    source={{uri: previewUri}}
-                    style={styles.docPreview}
-                    resizeMode="cover"
-                  />
-                  {!editMode && (
-                    <Text style={styles.docTapHint}>
-                      Ketuk untuk membuka dokumen
-                    </Text>
+                  style={styles.tombolHapus}
+                  onPress={handleHapus}
+                  disabled={deleting}>
+                  {deleting ? (
+                    <ActivityIndicator size="small" color={C.merah} />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="trash-outline"
+                        size={16}
+                        color={C.merah}
+                      />
+                      <Text style={[styles.tombolHapusTeks, {marginLeft: 6}]}>
+                        Hapus
+                      </Text>
+                    </>
                   )}
                 </TouchableOpacity>
-              ) : (
-                <View style={styles.docEmpty}>
-                  <Text style={styles.docEmptyTxt}>Belum diunggah</Text>
-                </View>
-              )}
-
-              {editMode && (
                 <TouchableOpacity
-                  style={[
-                    styles.docGantiBtn,
-                    newFile && styles.docGantiBtnUpdate,
-                  ]}
-                  onPress={() => pickDoc(setter)}>
-                  <Text style={styles.docGantiBtnTxt}>
-                    {newFile
-                      ? 'Ganti lagi'
-                      : hasDoc
-                      ? 'Ganti Foto'
-                      : 'Pilih Foto'}
+                  style={[styles.tombolUtama, {backgroundColor: warna}]}
+                  onPress={handleMulaiEdit}
+                  disabled={deleting}>
+                  <Ionicons name="create-outline" size={16} color="#fff" />
+                  <Text style={[styles.tombolUtamaTeks, {marginLeft: 6}]}>
+                    Edit Data
                   </Text>
                 </TouchableOpacity>
-              )}
-            </View>
-          );
-        })}
-      </View>
-
-      {/* ══ TOMBOL AKSI ══ */}
-      {canEdit && !editMode && (
-        <TouchableOpacity
-          style={styles.btnEdit}
-          onPress={() => setEditMode(true)}>
-          <Text style={styles.btnTxt}>Edit Data</Text>
-        </TouchableOpacity>
-      )}
-
-      {editMode && (
-        <>
-          <TouchableOpacity
-            style={styles.btnSave}
-            onPress={handleSave}
-            disabled={saving}>
-            {saving ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color="#fff" size="small" />
-                <Text style={styles.btnTxt}>Menyimpan...</Text>
               </View>
-            ) : (
-              <Text style={styles.btnTxt}>Simpan Perubahan</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.btnCancel}
-            onPress={() => setEditMode(false)}
-            disabled={saving}>
-            <Text style={[styles.btnTxt, {color: '#5b6472'}]}>Batal</Text>
-          </TouchableOpacity>
-        </>
-      )}
-    </ScrollView>
+            )
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: '#f4f6fb'},
-  centerScreen: {
+  safeArea: {flex: 1, backgroundColor: C.bg},
+  scroll: {flex: 1, backgroundColor: '#f4f5f7'},
+  pusatLayar: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f4f6fb',
+    backgroundColor: C.bg,
   },
-  statusBanner: {
+  loadingTeks: {color: C.putih, marginTop: 12, fontSize: 14},
+
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
-    padding: 13,
-    marginBottom: 16,
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 14,
   },
-  statusDot: {width: 9, height: 9, borderRadius: 5, marginRight: 8},
-  statusLabel: {fontWeight: '700', fontSize: 13.5},
-  card: {
+  backBtn: {padding: 6},
+  headerJudul: {color: C.putih, fontSize: 16, fontWeight: 'bold'},
+  headerSub: {color: C.abu, fontSize: 12, marginTop: 2},
+  editIconBtn: {padding: 8, borderRadius: 10, backgroundColor: '#ffffff10'},
+
+  statusCard: {
     backgroundColor: '#fff',
     borderRadius: 14,
-    padding: 16,
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+    padding: 14,
+    marginBottom: 12,
+    elevation: 1,
   },
-  cardHeader: {flexDirection: 'row', alignItems: 'center', marginBottom: 12},
-  cardAccent: {width: 4, height: 18, borderRadius: 2, marginRight: 8},
-  sectionTitle: {fontSize: 15, fontWeight: '700', color: '#1b1f27'},
-  row: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: 9},
-  rowLabel: {width: 130, color: '#8a92a2', fontSize: 12.5},
-  rowValue: {flex: 1, color: '#1b1f27', fontSize: 13.5, fontWeight: '600'},
+  statusBaris: {flexDirection: 'row', alignItems: 'center'},
+  iconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statusJenis: {fontSize: 14, fontWeight: 'bold', color: C.teksUtama},
+  statusTgl: {fontSize: 11, color: C.abuGelap, marginTop: 2},
+
+  peringatanBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f4f5f7',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 12,
+    gap: 6,
+  },
+  peringatanTeks: {fontSize: 11, color: C.abuGelap, flex: 1},
+
+  sectionCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    elevation: 1,
+  },
+  sectionJudul: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#37474f',
+    marginBottom: 10,
+  },
+
+  infoBaris: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    gap: 8,
+  },
+  infoBarisLabel: {fontSize: 11, color: C.abu, flexShrink: 0},
+  infoBarisValue: {
+    fontSize: 13,
+    color: '#263238',
+    fontWeight: '500',
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+
   divider: {height: 1, backgroundColor: '#eef0f4', marginVertical: 12},
   lokasiHeader: {
     fontWeight: '700',
-    color: '#12b886',
+    color: C.hijau,
     marginBottom: 10,
     fontSize: 13,
   },
-  editLabel: {
-    marginTop: 12,
+
+  inputWrap: {marginBottom: 12},
+  inputLabel: {
+    fontSize: 11,
+    color: C.abuGelap,
     marginBottom: 5,
-    color: '#5b6472',
-    fontSize: 12.5,
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  editInput: {
-    backgroundColor: '#f8f9fb',
-    padding: 10,
-    borderRadius: 9,
+  input: {
     borderWidth: 1,
-    borderColor: '#e4e7ee',
-    fontSize: 13.5,
-    color: '#1b1f27',
+    borderColor: C.garis,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 13,
+    color: C.teksUtama,
+    backgroundColor: '#fafafa',
   },
+  inputMultiline: {minHeight: 70, textAlignVertical: 'top'},
+
   jkRow: {flexDirection: 'row', gap: 8, marginTop: 4},
   jkBtn: {
     flex: 1,
     paddingVertical: 10,
     borderRadius: 9,
     borderWidth: 1,
-    borderColor: '#e4e7ee',
-    backgroundColor: '#f8f9fb',
+    borderColor: C.garis,
+    backgroundColor: '#fafafa',
     alignItems: 'center',
   },
-  jkBtnActive: {backgroundColor: '#2f6fed', borderColor: '#2f6fed'},
-  jkTxt: {color: '#5b6472', fontWeight: '500', fontSize: 13.5},
+  jkBtnActive: {backgroundColor: C.hijau, borderColor: C.hijau},
+  jkTxt: {color: C.abuGelap, fontWeight: '500', fontSize: 13.5},
   jkTxtActive: {color: '#fff', fontWeight: '700'},
-  btnEdit: {
-    backgroundColor: '#2f6fed',
-    padding: 15,
+
+  badge: {borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4},
+  badgeTeks: {color: '#fff', fontSize: 10, fontWeight: 'bold'},
+
+  tombolBaris: {flexDirection: 'row', gap: 10, marginTop: 4},
+  tombolUtama: {
+    flex: 1,
+    flexDirection: 'row',
     borderRadius: 12,
+    paddingVertical: 13,
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'center',
   },
-  btnSave: {
-    backgroundColor: '#12b886',
-    padding: 15,
+  tombolUtamaTeks: {color: '#fff', fontWeight: 'bold', fontSize: 14},
+  tombolSekunder: {
+    flex: 1,
     borderRadius: 12,
+    paddingVertical: 13,
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'center',
+    backgroundColor: '#eceff1',
   },
-  loadingRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
-  btnCancel: {
-    backgroundColor: '#fff',
-    padding: 15,
+  tombolSekunderTeks: {color: C.teksUtama, fontWeight: 'bold', fontSize: 14},
+  tombolHapus: {
+    flex: 1,
+    flexDirection: 'row',
     borderRadius: 12,
+    paddingVertical: 13,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffebee',
     borderWidth: 1,
-    borderColor: '#e4e7ee',
-    marginBottom: 10,
+    borderColor: C.merah + '55',
   },
+  tombolHapusTeks: {color: C.merah, fontWeight: 'bold', fontSize: 14},
+
   // ── Dokumen item ─────────────────────────────────────────────────
   docItem: {
     borderWidth: 1,
@@ -800,7 +1060,7 @@ const styles = StyleSheet.create({
   docTapHint: {
     textAlign: 'center',
     fontSize: 11.5,
-    color: '#2f6fed',
+    color: C.biru,
     marginTop: 6,
   },
   docEmpty: {
@@ -820,13 +1080,9 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     backgroundColor: '#eef2fb',
     borderWidth: 1,
-    borderColor: '#2f6fed',
+    borderColor: C.biru,
     alignItems: 'center',
   },
-  docGantiBtnUpdate: {
-    backgroundColor: '#fff8e6',
-    borderColor: '#f59f00',
-  },
-  docGantiBtnTxt: {fontSize: 13, fontWeight: '600', color: '#2f6fed'},
-  btnTxt: {color: '#fff', fontWeight: '700', fontSize: 15},
+  docGantiBtnUpdate: {backgroundColor: '#fff8e6', borderColor: C.oranye},
+  docGantiBtnTxt: {fontSize: 13, fontWeight: '600', color: C.biru},
 });

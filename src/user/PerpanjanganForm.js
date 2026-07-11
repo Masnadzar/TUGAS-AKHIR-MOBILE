@@ -1,9 +1,12 @@
 // src/user/PerpanjanganForm.js
-// Perpanjangan sewa makam: pakai ulang data lama, tambah upload IPTM + KTP ahli waris.
+// Perpanjangan sewa makam: pakai ulang data lama, tampilkan hubungan ahli
+// waris, tanggal wafat, tanggal lahir jenazah, hitung jatuh tempo otomatis
+// dari tanggal pemakaman, dan upload dokumen IPTM + KTP Ahli Waris + KK.
 import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   Alert,
@@ -13,6 +16,11 @@ import {
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import {launchImageLibrary} from 'react-native-image-picker';
+import {
+  hitungJatuhTempoDariHariIni,
+  hitungJatuhTempoDariPemakaman,
+  MASA_SEWA_TAHUN,
+} from '../utils/dateJatuhTempo';
 
 const CLOUD_NAME = 'dq59p6llb';
 const UPLOAD_PRESET = 'burial_upload';
@@ -44,9 +52,18 @@ const uploadToCloudinary = async (fileObj, folder) => {
 const DocBtn = ({label, file, onPress}) => (
   <TouchableOpacity style={styles.docBtn} onPress={onPress}>
     <Text style={styles.docBtnTxt}>
-      {file ? `✓ ${file.name}` : `Pilih Foto ${label}`}
+      {file ? `Terpilih: ${file.name}` : `Pilih Foto ${label}`}
     </Text>
   </TouchableOpacity>
+);
+
+const Row = ({label, value}) => (
+  <View style={{flexDirection: 'row', marginBottom: 6}}>
+    <Text style={{width: 150, color: '#888', fontSize: 13}}>{label}</Text>
+    <Text style={{flex: 1, color: '#303030', fontSize: 13, fontWeight: '500'}}>
+      {value || '-'}
+    </Text>
+  </View>
 );
 
 export default function PerpanjanganFormScreen({route, navigation}) {
@@ -58,6 +75,7 @@ export default function PerpanjanganFormScreen({route, navigation}) {
 
   const [dokIPTM, setDokIPTM] = useState(null);
   const [dokKTPWaris, setDokKTPWaris] = useState(null);
+  const [dokKKWaris, setDokKKWaris] = useState(null); // ← BARU: upload KK
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
@@ -121,6 +139,15 @@ export default function PerpanjanganFormScreen({route, navigation}) {
     );
   };
 
+  // Jatuh tempo LAMA (informasi, dihitung dari tanggal pemakaman pertama kali)
+  const jatuhTempoLama = linkedBurial?.burialDate
+    ? hitungJatuhTempoDariPemakaman(linkedBurial.burialDate)
+    : null;
+
+  // Jatuh tempo BARU (yang akan berlaku setelah perpanjangan disetujui,
+  // dihitung dari hari ini + masa sewa standar)
+  const jatuhTempoBaru = hitungJatuhTempoDariHariIni();
+
   const handleSubmit = async () => {
     if (loadingData) {
       return Alert.alert('Mohon tunggu', 'Data pemakaman masih dimuat.');
@@ -135,6 +162,8 @@ export default function PerpanjanganFormScreen({route, navigation}) {
       return Alert.alert('Validasi', 'Dokumen IPTM wajib diupload.');
     if (!dokKTPWaris)
       return Alert.alert('Validasi', 'KTP Ahli Waris wajib diupload.');
+    if (!dokKKWaris)
+      return Alert.alert('Validasi', 'Kartu Keluarga (KK) wajib diupload.');
 
     const user = auth().currentUser;
     if (!user) {
@@ -146,9 +175,10 @@ export default function PerpanjanganFormScreen({route, navigation}) {
     try {
       setLoading(true);
       setUploadProgress('Mengupload dokumen...');
-      const [urlIPTM, urlKTPWaris] = await Promise.all([
+      const [urlIPTM, urlKTPWaris, urlKKWaris] = await Promise.all([
         uploadToCloudinary(dokIPTM, 'iptm_perpanjangan'),
         uploadToCloudinary(dokKTPWaris, 'ktp_perpanjangan'),
+        uploadToCloudinary(dokKKWaris, 'kk_perpanjangan'),
       ]);
 
       setUploadProgress('Menyimpan data...');
@@ -159,17 +189,26 @@ export default function PerpanjanganFormScreen({route, navigation}) {
           burialId: linkedBurial.id,
           deceasedName: linkedBurial.deceasedName || null,
           nikJenazah: linkedBurial.nikJenazah || null,
+          tglLahirJenazah: linkedBurial.tglLahirJenazah || null,
+          tglWafat: linkedBurial.tglWafat || null,
           heirName: linkedBurial.heirName || null,
           nikAhliWaris: linkedBurial.nikAhliWaris || null,
+          hubungan: linkedBurial.hubungan || null,
           noTelepon: linkedBurial.noTelepon || null,
           alamat: linkedBurial.alamat || null,
           assignedBlock: linkedBurial.assignedBlock || null,
           assignedGraveNumber: linkedBurial.assignedGraveNumber || null,
           burialDateAsal: linkedBurial.burialDate || null,
 
-          // ── Dokumen baru untuk perpanjangan ────────────
+          // ── Jatuh tempo (BARU) ─────────────────────────
+          jatuhTempoLama: jatuhTempoLama,
+          jatuhTempoBaru: jatuhTempoBaru,
+          masaSewaTahun: MASA_SEWA_TAHUN,
+
+          // ── Dokumen untuk perpanjangan ──────────────────
           dokIPTM: urlIPTM || null,
           dokKTPWaris: urlKTPWaris || null,
+          dokKKWaris: urlKKWaris || null,
           notes: notes.trim(),
 
           // ── Metadata & status ──────────────────────────
@@ -194,7 +233,7 @@ export default function PerpanjanganFormScreen({route, navigation}) {
       <Text style={styles.pageTitle}>Perpanjangan Sewa Makam</Text>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>📋 Data Terdaftar</Text>
+        <Text style={styles.cardTitle}>Data Terdaftar</Text>
         {loadingData ? (
           <ActivityIndicator color="#ff9f1a" />
         ) : loadError ? (
@@ -202,7 +241,16 @@ export default function PerpanjanganFormScreen({route, navigation}) {
         ) : linkedBurial ? (
           <>
             <Row label="Nama Jenazah" value={linkedBurial.deceasedName} />
+            <Row
+              label="Tanggal Lahir Jenazah"
+              value={linkedBurial.tglLahirJenazah}
+            />
+            <Row label="Tanggal Wafat" value={linkedBurial.tglWafat} />
             <Row label="Ahli Waris" value={linkedBurial.heirName} />
+            <Row
+              label="Hubungan dengan Jenazah"
+              value={linkedBurial.hubungan}
+            />
             <Row
               label="Blok / No. Makam"
               value={`${linkedBurial.assignedBlock || '-'} / ${
@@ -218,10 +266,25 @@ export default function PerpanjanganFormScreen({route, navigation}) {
         )}
       </View>
 
+      {linkedBurial && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Masa Sewa</Text>
+          <Row label="Jatuh Tempo Saat Ini" value={jatuhTempoLama} />
+          <Row
+            label="Jatuh Tempo Setelah Diperpanjang"
+            value={jatuhTempoBaru}
+          />
+          <Text style={styles.docNote}>
+            Jatuh tempo baru dihitung otomatis {MASA_SEWA_TAHUN} tahun dari
+            tanggal pengajuan perpanjangan ini disetujui.
+          </Text>
+        </View>
+      )}
+
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>📎 Dokumen Perpanjangan</Text>
+        <Text style={styles.cardTitle}>Dokumen Perpanjangan</Text>
         <Text style={styles.docNote}>
-          Hanya perlu upload 2 dokumen berikut untuk perpanjangan.
+          Upload 3 dokumen berikut untuk perpanjangan.
         </Text>
 
         <Text style={styles.label}>IPTM (Ijin Pemakaian Tanah Makam)</Text>
@@ -236,6 +299,24 @@ export default function PerpanjanganFormScreen({route, navigation}) {
           label="KTP"
           file={dokKTPWaris}
           onPress={() => pickDoc(setDokKTPWaris)}
+        />
+
+        <Text style={styles.label}>Kartu Keluarga (KK)</Text>
+        <DocBtn
+          label="KK"
+          file={dokKKWaris}
+          onPress={() => pickDoc(setDokKKWaris)}
+        />
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.label}>Catatan (opsional)</Text>
+        <TextInput
+          style={[styles.input, {height: 80, textAlignVertical: 'top'}]}
+          value={notes}
+          onChangeText={setNotes}
+          placeholder="Catatan tambahan untuk petugas"
+          multiline
         />
       </View>
 
@@ -257,15 +338,6 @@ export default function PerpanjanganFormScreen({route, navigation}) {
     </ScrollView>
   );
 }
-
-const Row = ({label, value}) => (
-  <View style={{flexDirection: 'row', marginBottom: 6}}>
-    <Text style={{width: 130, color: '#888', fontSize: 13}}>{label}</Text>
-    <Text style={{flex: 1, color: '#303030', fontSize: 13, fontWeight: '500'}}>
-      {value || '-'}
-    </Text>
-  </View>
-);
 
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#f1f2f6'},
@@ -290,6 +362,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   label: {marginTop: 10, marginBottom: 4, color: '#555', fontSize: 13},
+  input: {
+    backgroundColor: '#f8f9fa',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
   docBtn: {
     backgroundColor: '#fff7ec',
     borderWidth: 1,

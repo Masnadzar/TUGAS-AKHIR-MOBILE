@@ -2,6 +2,18 @@
 // Layar verifikasi admin untuk collection 'perpanjangan' dan 'tumpangan'.
 // Sama seperti Assign.js (untuk 'burials'), tapi bisa dipakai untuk 2 collection
 // sekaligus lewat route.params.collection ('perpanjangan' | 'tumpangan').
+//
+// BARU:
+// - Dokumen yang tampil disamakan dengan yang benar-benar diupload user:
+//   perpanjangan kini menampilkan juga "KK Ahli Waris" (dokKKWaris),
+//   tumpangan kini menampilkan juga "Surat Medis" (dokSuratMedis).
+// - Untuk collection 'perpanjangan': admin punya 2 pilihan jelas --
+//   "Perpanjang" (masa sewa otomatis +3 tahun dari hari ini, sesuai
+//   MASA_SEWA_TAHUN) atau "Tidak Diperpanjang" (status jadi 'rejected').
+//   Saat diperpanjang, jatuh tempo baru dihitung otomatis & ditampilkan
+//   sebelum admin konfirmasi, lalu disimpan ke dokumen perpanjangan DAN
+//   disinkronkan ke dokumen 'burials' asal supaya jatuh tempo selalu
+//   sinkron di kedua tempat.
 import React, {useEffect, useState} from 'react';
 import {
   View,
@@ -18,6 +30,10 @@ import {
 } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
+import {
+  hitungJatuhTempoDariHariIni,
+  MASA_SEWA_TAHUN,
+} from '../utils/dateJatuhTempo';
 
 const {width: SW, height: SH} = Dimensions.get('window');
 
@@ -37,11 +53,13 @@ const CONFIG = {
       {label: 'Blok Lama', field: 'assignedBlock'},
       {label: 'No. Makam Lama', field: 'assignedGraveNumber'},
       {label: 'Tgl Pemakaman Asal', field: 'burialDateAsal'},
+      {label: 'Jatuh Tempo Saat Ini', field: 'jatuhTempoLama'},
       {label: 'Catatan Pemohon', field: 'notes'},
     ],
     docFields: [
       {label: 'IPTM', field: 'dokIPTM'},
       {label: 'KTP Ahli Waris', field: 'dokKTPWaris'},
+      {label: 'KK Ahli Waris', field: 'dokKKWaris'},
     ],
   },
   tumpangan: {
@@ -69,6 +87,7 @@ const CONFIG = {
       {label: 'KK', field: 'dokKK'},
       {label: 'Akte', field: 'dokAkte'},
       {label: 'Surat Kematian', field: 'dokSuratKematian'},
+      {label: 'Surat Medis', field: 'dokSuratMedis'},
       {label: 'IPTM Lama', field: 'dokIPTMLama'},
     ],
   },
@@ -77,6 +96,7 @@ const CONFIG = {
 export default function AssignExtra({route, navigation}) {
   const {id, collection} = route.params || {};
   const cfg = CONFIG[collection];
+  const isPerpanjangan = collection === 'perpanjangan';
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -89,6 +109,10 @@ export default function AssignExtra({route, navigation}) {
   const [previewLabel, setPreviewLabel] = useState('');
   const [previewVisible, setPreviewVisible] = useState(false);
   const [imgLoading, setImgLoading] = useState(false);
+
+  // Jatuh tempo baru untuk perpanjangan: dihitung otomatis 3 tahun
+  // (MASA_SEWA_TAHUN) dari hari ini admin memverifikasi/memperpanjang.
+  const jatuhTempoBaruPerpanjangan = hitungJatuhTempoDariHariIni();
 
   useEffect(() => {
     if (!id || !collection || !cfg) {
@@ -148,35 +172,47 @@ export default function AssignExtra({route, navigation}) {
 
       // Field disimpan sebagai *Baru supaya tidak menimpa data referensi lama
       // (assignedBlock/assignedGraveNumber lama tetap tersimpan untuk riwayat).
-      await firestore()
-        .collection(collection)
-        .doc(id)
-        .set(
-          {
-            assignedBlockBaru: block.trim(),
-            assignedGraveNumberBaru: graveNo.trim(),
-            adminNote: adminNote.trim(),
-            status: 'verified',
-            verifiedBy: adminUid || null,
-            verifiedAt: firestore.FieldValue.serverTimestamp(),
-          },
-          {merge: true},
-        );
+      const payload = {
+        assignedBlockBaru: block.trim(),
+        assignedGraveNumberBaru: graveNo.trim(),
+        adminNote: adminNote.trim(),
+        status: 'verified',
+        verifiedBy: adminUid || null,
+        verifiedAt: firestore.FieldValue.serverTimestamp(),
+      };
+
+      // Untuk perpanjangan: setiap kali disetujui, masa sewa otomatis
+      // diperpanjang 3 tahun (MASA_SEWA_TAHUN) dari tanggal verifikasi ini.
+      if (isPerpanjangan) {
+        payload.jatuhTempoBaru = jatuhTempoBaruPerpanjangan;
+        payload.masaSewaTahun = MASA_SEWA_TAHUN;
+      }
+
+      await firestore().collection(collection).doc(id).set(payload, {
+        merge: true,
+      });
 
       // Untuk perpanjangan: begitu diverifikasi, ikut update collection 'burials'
-      // asalnya supaya blok/lokasi tetap sinkron & tersambung.
-      if (collection === 'perpanjangan' && data?.burialId) {
+      // asalnya supaya blok/lokasi & jatuh tempo tetap sinkron & tersambung.
+      if (isPerpanjangan && data?.burialId) {
         await firestore().collection('burials').doc(data.burialId).set(
           {
             assignedBlock: block.trim(),
             assignedGraveNumber: graveNo.trim(),
+            jatuhTempo: jatuhTempoBaruPerpanjangan,
+            masaSewaTahun: MASA_SEWA_TAHUN,
             lastExtendedAt: firestore.FieldValue.serverTimestamp(),
           },
           {merge: true},
         );
       }
 
-      Alert.alert('Sukses', 'Data berhasil diverifikasi.');
+      Alert.alert(
+        'Sukses',
+        isPerpanjangan
+          ? `Sewa makam berhasil diperpanjang ${MASA_SEWA_TAHUN} tahun. Jatuh tempo baru: ${jatuhTempoBaruPerpanjangan}.`
+          : 'Data berhasil diverifikasi.',
+      );
       navigation.goBack();
     } catch (err) {
       console.log('[AssignExtra] verify error:', err);
@@ -187,27 +223,34 @@ export default function AssignExtra({route, navigation}) {
   };
 
   const handleReject = () => {
-    Alert.alert('Tolak', 'Tandai entri ini sebagai ditolak?', [
-      {text: 'Batal', style: 'cancel'},
-      {
-        text: 'Tolak',
-        style: 'destructive',
-        onPress: async () => {
-          await firestore()
-            .collection(collection)
-            .doc(id)
-            .set(
-              {
-                status: 'rejected',
-                verifiedBy: auth().currentUser?.uid || null,
-                verifiedAt: firestore.FieldValue.serverTimestamp(),
-              },
-              {merge: true},
-            );
-          navigation.goBack();
+    Alert.alert(
+      isPerpanjangan ? 'Tidak Diperpanjang' : 'Tolak',
+      isPerpanjangan
+        ? 'Tandai pengajuan perpanjangan ini sebagai TIDAK DIPERPANJANG? Masa sewa lama tetap berlaku (tidak berubah).'
+        : 'Tandai entri ini sebagai ditolak?',
+      [
+        {text: 'Batal', style: 'cancel'},
+        {
+          text: isPerpanjangan ? 'Tidak Diperpanjang' : 'Tolak',
+          style: 'destructive',
+          onPress: async () => {
+            await firestore()
+              .collection(collection)
+              .doc(id)
+              .set(
+                {
+                  status: 'rejected',
+                  adminNote: adminNote.trim(),
+                  verifiedBy: auth().currentUser?.uid || null,
+                  verifiedAt: firestore.FieldValue.serverTimestamp(),
+                },
+                {merge: true},
+              );
+            navigation.goBack();
+          },
         },
-      },
-    ]);
+      ],
+    );
   };
 
   if (!cfg || loading)
@@ -257,8 +300,16 @@ export default function AssignExtra({route, navigation}) {
 
   const sc = {
     pending: {bg: '#fff3cd', txt: '#856404', label: '⏳ PENDING'},
-    verified: {bg: '#d4edda', txt: '#155724', label: '✅ TERVERIFIKASI'},
-    rejected: {bg: '#f8d7da', txt: '#721c24', label: '❌ DITOLAK'},
+    verified: {
+      bg: '#d4edda',
+      txt: '#155724',
+      label: isPerpanjangan ? '✅ DIPERPANJANG' : '✅ TERVERIFIKASI',
+    },
+    rejected: {
+      bg: '#f8d7da',
+      txt: '#721c24',
+      label: isPerpanjangan ? '❌ TIDAK DIPERPANJANG' : '❌ DITOLAK',
+    },
   }[data.status] || {bg: '#eee', txt: '#333', label: data.status};
 
   return (
@@ -281,6 +332,27 @@ export default function AssignExtra({route, navigation}) {
             <Row key={r.field} label={r.label} value={data[r.field]} />
           ))}
         </View>
+
+        {isPerpanjangan && (
+          <View style={styles.card}>
+            <Text style={[styles.cardTitle, {color: cfg.color}]}>
+              ⏱️ Masa Sewa
+            </Text>
+            <Row
+              label="Masa Sewa per Perpanjangan"
+              value={`${MASA_SEWA_TAHUN} tahun`}
+            />
+            <Row label="Jatuh Tempo Saat Ini" value={data.jatuhTempoLama} />
+            {data.status === 'pending' ? (
+              <Row
+                label="Jatuh Tempo Jika Disetujui"
+                value={jatuhTempoBaruPerpanjangan}
+              />
+            ) : (
+              <Row label="Jatuh Tempo Baru" value={data.jatuhTempoBaru} />
+            )}
+          </View>
+        )}
 
         <View style={styles.card}>
           <Text style={[styles.cardTitle, {color: cfg.color}]}>📎 Dokumen</Text>
@@ -326,6 +398,15 @@ export default function AssignExtra({route, navigation}) {
               multiline
             />
 
+            {isPerpanjangan && (
+              <Text style={styles.docNote}>
+                Menekan "Perpanjang & Simpan" akan otomatis memperpanjang masa
+                sewa {MASA_SEWA_TAHUN} tahun dari hari ini (jatuh tempo baru:{' '}
+                {jatuhTempoBaruPerpanjangan}) dan menyinkronkan data ke makam
+                asal.
+              </Text>
+            )}
+
             <TouchableOpacity
               style={[styles.btnVerify, {backgroundColor: cfg.color}]}
               onPress={handleVerify}
@@ -333,7 +414,11 @@ export default function AssignExtra({route, navigation}) {
               {saving ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.btnTxt}>✅ Verifikasi & Simpan</Text>
+                <Text style={styles.btnTxt}>
+                  {isPerpanjangan
+                    ? '✅ Perpanjang & Simpan'
+                    : '✅ Verifikasi & Simpan'}
+                </Text>
               )}
             </TouchableOpacity>
 
@@ -341,7 +426,9 @@ export default function AssignExtra({route, navigation}) {
               style={styles.btnReject}
               onPress={handleReject}
               disabled={saving}>
-              <Text style={styles.btnTxt}>❌ Tolak Entri</Text>
+              <Text style={styles.btnTxt}>
+                {isPerpanjangan ? '❌ Tidak Diperpanjang' : '❌ Tolak Entri'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -354,10 +441,15 @@ export default function AssignExtra({route, navigation}) {
                 fontWeight: 'bold',
                 textAlign: 'center',
               }}>
-              ✅ Sudah diverifikasi
+              {isPerpanjangan
+                ? `✅ Sewa telah diperpanjang ${MASA_SEWA_TAHUN} tahun`
+                : '✅ Sudah diverifikasi'}
             </Text>
             <Row label="Blok Makam" value={data.assignedBlockBaru} />
             <Row label="Nomor Makam" value={data.assignedGraveNumberBaru} />
+            {isPerpanjangan && (
+              <Row label="Jatuh Tempo Baru" value={data.jatuhTempoBaru} />
+            )}
             <Row label="Catatan" value={data.adminNote || '-'} />
           </View>
         )}
@@ -370,8 +462,13 @@ export default function AssignExtra({route, navigation}) {
                 fontWeight: 'bold',
                 textAlign: 'center',
               }}>
-              ❌ Entri ini telah ditolak
+              {isPerpanjangan
+                ? '❌ Pengajuan perpanjangan ini tidak disetujui'
+                : '❌ Entri ini telah ditolak'}
             </Text>
+            {data.adminNote ? (
+              <Row label="Catatan" value={data.adminNote} />
+            ) : null}
           </View>
         )}
       </ScrollView>
@@ -446,6 +543,7 @@ const styles = StyleSheet.create({
   rowLabel: {width: 170, color: '#888', fontSize: 13},
   rowValue: {flex: 1, color: '#303030', fontSize: 13, fontWeight: '600'},
   docHint: {color: '#aaa', fontSize: 11, marginBottom: 10},
+  docNote: {color: '#888', fontSize: 11, marginTop: 10, marginBottom: 4},
   docGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10},
   docCard: {
     width: (SW - 80) / 2,

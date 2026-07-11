@@ -22,6 +22,7 @@ import AssignExtraScreen from './src/admin/AssignExtra';
 import UserBurialListScreen from './src/user/UserBurialList';
 import UserBurialFormScreen from './src/user/UserBurialForm';
 import BurialDetailScreen from './src/user/BurialDetail';
+import PengajuanDetailScreen from './src/user/PengajuanDetail';
 import InformasiUserScreen from './src/user/InformasiUser';
 import Icon from 'react-native-vector-icons/FontAwesome6';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -49,6 +50,10 @@ function App() {
         <Stack.Screen name="Informasi" component={InformasiScreen} />
         <Stack.Screen name="Profile" component={ProfileScreen} />
         <Stack.Screen name="BurialDetail" component={BurialDetailScreen} />
+        <Stack.Screen
+          name="PengajuanDetail"
+          component={PengajuanDetailScreen}
+        />
         <Stack.Screen name="HomeUser" component={HomeUserScreen} />
         <Stack.Screen name="UserBurialForm" component={UserBurialFormScreen} />
         <Stack.Screen name="InformasiUser" component={InformasiUserScreen} />
