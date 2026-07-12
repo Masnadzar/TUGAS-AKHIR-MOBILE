@@ -1,8 +1,3 @@
-// src/utils/dateValidation.js
-// Helper validasi tanggal DD-MM-YYYY yang dipakai di semua form pemakaman.
-// Poin 5: tanggal wafat & tanggal pemakaman tidak boleh "tidak jelas"
-// (misalnya 31-02-2025, tanggal di masa depan yang belum terjadi, dsb).
-
 export const DATE_REGEX = /^\d{2}-\d{2}-\d{4}$/;
 
 // DD-MM-YYYY -> Date object (null jika tidak valid / tanggal tidak ada, cth 31-02)
@@ -17,11 +12,53 @@ export function parseDDMMYYYY(str) {
   return valid ? date : null;
 }
 
+// Date object -> "DD-MM-YYYY"
+export function formatDDMMYYYY(date) {
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
 function startOfToday() {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d;
 }
+
+function awalTahunIni() {
+  const d = new Date();
+  d.setMonth(0, 1); // 1 Januari
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Masa maksimal antara tanggal wafat dan tanggal pemakaman.
+export const MAKS_HARI_PEMAKAMAN_SETELAH_WAFAT = 2;
+
+// ── Batas kalender (dipakai oleh komponen DatePickerField) ──────────
+
+// Tanggal lahir: bebas, hanya dibatasi tidak boleh di masa depan.
+export function batasKalenderTglLahir() {
+  return {minimumDate: undefined, maximumDate: startOfToday()};
+}
+
+// Tanggal wafat: hanya boleh di tahun berjalan (1 Jan tahun ini s/d hari ini).
+export function batasKalenderTglWafat() {
+  return {minimumDate: awalTahunIni(), maximumDate: startOfToday()};
+}
+
+export function batasKalenderBurialDate(tglWafatStr) {
+  const wafat = parseDDMMYYYY(tglWafatStr);
+  if (!wafat) {
+    return {minimumDate: awalTahunIni(), maximumDate: startOfToday()};
+  }
+  const maksimal = new Date(wafat);
+  maksimal.setDate(maksimal.getDate() + MAKS_HARI_PEMAKAMAN_SETELAH_WAFAT);
+  return {minimumDate: wafat, maximumDate: maksimal};
+}
+
+// ── Validasi (dipakai saat submit, jaga-jaga kalau input tidak lewat kalender) ──
 
 // Tanggal lahir: harus tanggal valid & tidak boleh di masa depan
 export function validateTglLahir(str) {
@@ -32,18 +69,20 @@ export function validateTglLahir(str) {
   return null;
 }
 
-// Tanggal wafat: harus tanggal valid & tidak boleh di masa depan
+// Tanggal wafat: harus tanggal valid, tidak boleh di masa depan,
+// dan harus berada di tahun berjalan (tahun ini saja).
 export function validateTglWafat(str) {
   const date = parseDDMMYYYY(str);
   if (!date)
     return 'Format tanggal wafat tidak valid (DD-MM-YYYY), contoh: 05-12-2025';
   if (date > startOfToday())
     return 'Tanggal wafat tidak boleh di masa depan (belum terjadi)';
+  if (date < awalTahunIni())
+    return `Tanggal wafat hanya boleh di tahun ${new Date().getFullYear()}`;
   return null;
 }
 
-// Tanggal pemakaman: harus tanggal valid, >= tanggal wafat,
-// dan tidak lebih dari 14 hari setelah wafat (menghindari tanggal ngasal/tidak jelas)
+// maksimal 2 hari setelah tanggal wafat.
 export function validateBurialDate(str, tglWafatStr) {
   const date = parseDDMMYYYY(str);
   if (!date)
@@ -53,9 +92,9 @@ export function validateBurialDate(str, tglWafatStr) {
   if (wafat) {
     if (date < wafat)
       return 'Tanggal pemakaman tidak boleh sebelum tanggal wafat';
-    const maxGap = 14 * 24 * 60 * 60 * 1000;
+    const maxGap = MAKS_HARI_PEMAKAMAN_SETELAH_WAFAT * 24 * 60 * 60 * 1000;
     if (date - wafat > maxGap) {
-      return 'Tanggal pemakaman terlalu jauh dari tanggal wafat (maks. 14 hari)';
+      return `Tanggal pemakaman maksimal ${MAKS_HARI_PEMAKAMAN_SETELAH_WAFAT} hari setelah tanggal wafat`;
     }
   }
   return null;

@@ -122,13 +122,13 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#f5f6fa',
+    color: '#000000',
     textAlign: 'center',
   },
   tagline: {
     marginTop: 6,
     fontSize: 13,
-    color: '#dcdde1',
+    color: '#000000',
     textAlign: 'center',
   },
   bottomArea: {

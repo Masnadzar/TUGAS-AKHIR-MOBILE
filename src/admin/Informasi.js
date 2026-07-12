@@ -177,7 +177,7 @@ export default function InformasiScreen({navigation}) {
           <View style={styles.contactRow}>
             <Text style={styles.contactLabel}>Jam Layanan</Text>
             <Text style={styles.contactValue}>
-              Senin – Jumat, 08.00 – 16.00
+              Senin – Minggu, 08.00 – 16.00
             </Text>
           </View>
         </View>

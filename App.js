@@ -19,7 +19,6 @@ import HomeAdminScreen from './src/admin/HomeAdmin';
 import HomeUserScreen from './src/user/HomeUser';
 import AssignScreen from './src/admin/Assign';
 import AssignExtraScreen from './src/admin/AssignExtra';
-import UserBurialListScreen from './src/user/UserBurialList';
 import UserBurialFormScreen from './src/user/UserBurialForm';
 import BurialDetailScreen from './src/user/BurialDetail';
 import PengajuanDetailScreen from './src/user/PengajuanDetail';
@@ -57,7 +56,6 @@ function App() {
         <Stack.Screen name="HomeUser" component={HomeUserScreen} />
         <Stack.Screen name="UserBurialForm" component={UserBurialFormScreen} />
         <Stack.Screen name="InformasiUser" component={InformasiUserScreen} />
-        <Stack.Screen name="UserBurialList" component={UserBurialListScreen} />
         <Stack.Screen name="ProfileUser" component={ProfileUserScreen} />
       </Stack.Navigator>
     </NavigationContainer>

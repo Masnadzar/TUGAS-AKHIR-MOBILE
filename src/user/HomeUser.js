@@ -6,7 +6,6 @@ import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import HomeScreen from './Home';
 import UserBurialFormScreen from './UserBurialForm';
-import UserBurialListScreen from './UserBurialList';
 import UserInformasiScreen from './InformasiUser';
 import CreateMenuScreen, {PilihDataLamaScreen} from './CreateMenu';
 import PerpanjanganFormScreen from './PerpanjanganForm';
@@ -50,11 +49,6 @@ function CreateStackNavigator() {
         name="TumpanganForm"
         component={TumpanganFormScreen}
         options={{title: 'Ijin Tumpang'}}
-      />
-      <CreateStack.Screen
-        name="RiwayatPengajuan"
-        component={UserBurialListScreen}
-        options={{title: 'Riwayat Pengajuan'}}
       />
     </CreateStack.Navigator>
   );

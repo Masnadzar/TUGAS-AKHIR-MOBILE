@@ -1,6 +1,3 @@
-// src/user/TumpanganForm.js
-// Ijin Tumpang: isi biodata jenazah baru (sama seperti makam baru),
-// tapi terhubung ke makam lama milik user + wajib upload IPTM terdahulu.
 import React, {useState, useEffect} from 'react';
 import {
   View,
@@ -19,7 +16,12 @@ import {
   validateTglLahir,
   validateTglWafat,
   validateBurialDate,
+  batasKalenderTglLahir,
+  batasKalenderTglWafat,
+  batasKalenderBurialDate,
+  MAKS_HARI_PEMAKAMAN_SETELAH_WAFAT,
 } from '../utils/dateValidation';
+import DatePickerField from '../components/DatePickerField';
 
 const CLOUD_NAME = 'dq59p6llb';
 const UPLOAD_PRESET = 'burial_upload';
@@ -351,29 +353,23 @@ export default function TumpanganFormScreen({route, navigation}) {
           value={binBinti}
           onChangeText={setBinBinti}
         />
-        <Text style={styles.label}>Tanggal Lahir * (DD-MM-YYYY)</Text>
-        <TextInput
-          style={styles.input}
+        <DatePickerField
+          label="Tanggal Lahir *"
           value={tglLahirJenazah}
-          onChangeText={t => formatTanggal(t, setTglLahirJenazah)}
-          keyboardType="number-pad"
-          maxLength={10}
+          onChange={setTglLahirJenazah}
+          {...batasKalenderTglLahir()}
         />
-        <Text style={styles.label}>Tanggal Wafat * (DD-MM-YYYY)</Text>
-        <TextInput
-          style={styles.input}
+        <DatePickerField
+          label="Tanggal Wafat * (hanya boleh tahun ini)"
           value={tglWafat}
-          onChangeText={t => formatTanggal(t, setTglWafat)}
-          keyboardType="number-pad"
-          maxLength={10}
+          onChange={setTglWafat}
+          {...batasKalenderTglWafat()}
         />
-        <Text style={styles.label}>Tanggal Pemakaman * (DD-MM-YYYY)</Text>
-        <TextInput
-          style={styles.input}
+        <DatePickerField
+          label={`Tanggal Pemakaman * (maks. ${MAKS_HARI_PEMAKAMAN_SETELAH_WAFAT} hari setelah wafat)`}
           value={burialDate}
-          onChangeText={t => formatTanggal(t, setBurialDate)}
-          keyboardType="number-pad"
-          maxLength={10}
+          onChange={setBurialDate}
+          {...batasKalenderBurialDate(tglWafat)}
         />
       </View>
 

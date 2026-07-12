@@ -18,6 +18,11 @@
 // bisa diganti saat mode edit (upload otomatis ke Cloudinary, sama seperti
 // alur di form pengajuan awal). Daftar dokumen per jenis diatur lewat
 // KONFIG_JENIS[...].dokumen.
+//
+// UPDATE: mode edit untuk perpanjangan & tumpangan sekarang membolehkan
+// semua field diedit (sama seperti burials/Makam Baru), termasuk field
+// yang sebelumnya read-only (mis. blok makam, no. makam, tanggal-tanggal
+// referensi).
 
 import React, {useEffect, useState} from 'react';
 import {
@@ -39,6 +44,12 @@ import {
 import firestore from '@react-native-firebase/firestore';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {launchImageLibrary} from 'react-native-image-picker';
+import DatePickerField from '../components/DatePickerField';
+import {
+  batasKalenderTglLahir,
+  batasKalenderTglWafat,
+  batasKalenderBurialDate,
+} from '../utils/dateValidation';
 
 // ── Palet warna, sama dengan Home.js ────────────────────────────────
 const C = {
@@ -96,9 +107,24 @@ const KONFIG_JENIS = {
         keyboardType: 'numeric',
       },
       {key: 'binBinti', label: 'Bin/Binti', editable: true},
-      {key: 'tglLahirJenazah', label: 'Tanggal Lahir Jenazah', editable: true},
-      {key: 'tglWafat', label: 'Tanggal Wafat', editable: true},
-      {key: 'burialDate', label: 'Tanggal Pemakaman', editable: true},
+      {
+        key: 'tglLahirJenazah',
+        label: 'Tanggal Lahir Jenazah',
+        editable: true,
+        isDate: true,
+      },
+      {
+        key: 'tglWafat',
+        label: 'Tanggal Wafat',
+        editable: true,
+        isDate: true,
+      },
+      {
+        key: 'burialDate',
+        label: 'Tanggal Pemakaman',
+        editable: true,
+        isDate: true,
+      },
       {key: 'heirName', label: 'Nama Ahli Waris', editable: true},
       {key: 'hubungan', label: 'Hubungan dengan Jenazah', editable: true},
       {
@@ -127,10 +153,21 @@ const KONFIG_JENIS = {
     // field: { key, label, editable, keyboardType, multiline }
     // Catatan: field & dokumen di bawah disamakan persis dengan yang
     // disimpan oleh PerpanjanganForm.js (collection 'perpanjangan').
+    // Semua field kini editable = true, konsisten dengan burials.
     fields: [
-      {key: 'deceasedName', label: 'Nama Jenazah', editable: false},
-      {key: 'tglLahirJenazah', label: 'Tanggal Lahir Jenazah', editable: false},
-      {key: 'tglWafat', label: 'Tanggal Wafat', editable: false},
+      {key: 'deceasedName', label: 'Nama Jenazah', editable: true},
+      {
+        key: 'tglLahirJenazah',
+        label: 'Tanggal Lahir Jenazah',
+        editable: true,
+        isDate: true,
+      },
+      {
+        key: 'tglWafat',
+        label: 'Tanggal Wafat',
+        editable: true,
+        isDate: true,
+      },
       {key: 'heirName', label: 'Nama Ahli Waris', editable: true},
       {key: 'hubungan', label: 'Hubungan dengan Jenazah', editable: true},
       {
@@ -139,23 +176,33 @@ const KONFIG_JENIS = {
         editable: true,
         keyboardType: 'phone-pad',
       },
+      // Blok & No. Makam TIDAK boleh diubah user -- selalu read-only,
+      // baik di mode lihat maupun edit.
       {key: 'assignedBlock', label: 'Blok Makam', editable: false},
       {key: 'assignedGraveNumber', label: 'No. Makam', editable: false},
-      {key: 'burialDateAsal', label: 'Tanggal Pemakaman Asal', editable: false},
+      {
+        key: 'burialDateAsal',
+        label: 'Tanggal Pemakaman Asal',
+        editable: true,
+        isDate: true,
+      },
       {
         key: 'jatuhTempoLama',
         label: 'Jatuh Tempo Saat Ini',
-        editable: false,
+        editable: true,
+        isDate: true,
       },
       {
         key: 'jatuhTempoBaru',
         label: 'Jatuh Tempo Setelah Diperpanjang',
-        editable: false,
+        editable: true,
+        isDate: true,
       },
       {
         key: 'masaSewaTahun',
         label: 'Masa Sewa (tahun)',
-        editable: false,
+        editable: true,
+        keyboardType: 'numeric',
       },
       {
         key: 'notes',
@@ -180,8 +227,11 @@ const KONFIG_JENIS = {
     icon: 'people-circle-outline',
     // Catatan: field & dokumen di bawah disamakan persis dengan yang
     // disimpan oleh TumpanganForm.js (collection 'tumpangan').
+    // Semua field kini editable = true, konsisten dengan burials.
     fields: [
-      // ── Referensi makam lama (read-only) ─────────────────────
+      // ── Referensi makam lama ─────────────────────
+      // Blok & No. Makam Lama TIDAK boleh diubah user -- selalu read-only,
+      // baik di mode lihat maupun edit.
       {key: 'assignedBlockLama', label: 'Blok Makam Lama', editable: false},
       {
         key: 'assignedGraveNumberLama',
@@ -198,9 +248,24 @@ const KONFIG_JENIS = {
       },
       {key: 'binBinti', label: 'Bin/Binti', editable: true},
       {key: 'agama', label: 'Agama', editable: true},
-      {key: 'tglLahirJenazah', label: 'Tanggal Lahir Jenazah', editable: true},
-      {key: 'tglWafat', label: 'Tanggal Wafat', editable: true},
-      {key: 'burialDate', label: 'Tanggal Pemakaman', editable: true},
+      {
+        key: 'tglLahirJenazah',
+        label: 'Tanggal Lahir Jenazah',
+        editable: true,
+        isDate: true,
+      },
+      {
+        key: 'tglWafat',
+        label: 'Tanggal Wafat',
+        editable: true,
+        isDate: true,
+      },
+      {
+        key: 'burialDate',
+        label: 'Tanggal Pemakaman',
+        editable: true,
+        isDate: true,
+      },
       // ── Data ahli waris ───────────────────────────────────────
       {key: 'heirName', label: 'Nama Ahli Waris', editable: true},
       {
@@ -270,6 +335,24 @@ const warnaBadge = status => {
       return {bg: C.merah, label: 'Ditolak'};
     default:
       return {bg: C.oranye, label: 'Pending'};
+  }
+};
+
+// ── Batas kalender per field tanggal, disamakan dengan aturan di form
+// pengajuan awal (UserBurialForm / TumpanganForm). Field tanggal yang
+// tidak punya aturan khusus (mis. milik Perpanjangan: tanggal pemakaman
+// asal, jatuh tempo) dibiarkan tanpa batas min/max -- kalender tetap
+// bisa dibuka bebas.
+const getBatasKalender = (fieldKey, form) => {
+  switch (fieldKey) {
+    case 'tglLahirJenazah':
+      return batasKalenderTglLahir();
+    case 'tglWafat':
+      return batasKalenderTglWafat();
+    case 'burialDate':
+      return batasKalenderBurialDate(form.tglWafat);
+    default:
+      return {};
   }
 };
 
@@ -635,8 +718,28 @@ export default function PengajuanDetailScreen({route, navigation}) {
               {editMode ? 'Edit Data Permohonan' : 'Data Permohonan'}
             </Text>
 
-            {konfig.fields.map(fld =>
-              editMode && fld.editable ? (
+            {konfig.fields.map(fld => {
+              if (!(editMode && fld.editable)) {
+                return (
+                  <InfoBaris
+                    key={fld.key}
+                    label={fld.label}
+                    value={data[fld.key]}
+                  />
+                );
+              }
+              if (fld.isDate) {
+                return (
+                  <DatePickerField
+                    key={fld.key}
+                    label={fld.label}
+                    value={form[fld.key]}
+                    onChange={val => handleChangeField(fld.key, val)}
+                    {...getBatasKalender(fld.key, form)}
+                  />
+                );
+              }
+              return (
                 <InputBaris
                   key={fld.key}
                   label={fld.label}
@@ -645,14 +748,8 @@ export default function PengajuanDetailScreen({route, navigation}) {
                   keyboardType={fld.keyboardType}
                   multiline={fld.multiline}
                 />
-              ) : (
-                <InfoBaris
-                  key={fld.key}
-                  label={fld.label}
-                  value={data[fld.key]}
-                />
-              ),
-            )}
+              );
+            })}
           </View>
 
           {/* ── DOKUMEN PENDUKUNG (foto/gambar yang sudah diinput) ── */}

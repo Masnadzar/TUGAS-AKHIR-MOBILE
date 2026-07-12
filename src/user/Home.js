@@ -1,11 +1,3 @@
-// src/user/Home.js
-// Update: kartu data sekarang bisa DI-TAP LANGSUNG untuk membuka detail
-// (satu kali tap), konsisten untuk ketiga jenis permohonan -- Makam Baru,
-// Perpanjangan, dan Ijin Tumpang. Sebelumnya harus expand dulu baru tekan
-// tombol "Lihat Detail", dan field ringkasan (assignedBlock dkk) tidak
-// sinkron dengan field asli yang ditulis oleh PerpanjanganForm/TumpanganForm
-// sehingga data tidak tampil. Field ringkasan sekarang disamakan persis
-// dengan field yang dipakai di PengajuanDetail.js.
 import React, {useEffect, useState, useCallback} from 'react';
 import {
   SafeAreaView,

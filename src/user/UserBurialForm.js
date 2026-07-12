@@ -1,4 +1,3 @@
-// src/user/UserBurialForm.js
 import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
@@ -17,7 +16,12 @@ import {
   validateTglLahir,
   validateTglWafat,
   validateBurialDate,
+  batasKalenderTglLahir,
+  batasKalenderTglWafat,
+  batasKalenderBurialDate,
+  MAKS_HARI_PEMAKAMAN_SETELAH_WAFAT,
 } from '../utils/dateValidation';
+import DatePickerField from '../components/DatePickerField';
 
 const CLOUD_NAME = 'dq59p6llb';
 const UPLOAD_PRESET = 'burial_upload';
@@ -314,7 +318,7 @@ export default function UserBurialFormScreen({navigation, route}) {
         resetForm();
       }
 
-      navigation.navigate('UserBurialList');
+      navigation.navigate('Home');
     } catch (err) {
       console.log('[UserBurialForm] err', err);
       Alert.alert('Error', 'Gagal menyimpan data: ' + err.message);
@@ -340,7 +344,7 @@ export default function UserBurialFormScreen({navigation, route}) {
               setLoading(true);
               await firestore().collection('burials').doc(burialId).delete();
               Alert.alert('Terhapus', 'Data pemakaman telah dihapus.');
-              navigation.navigate('UserBurialList');
+              navigation.navigate('Home');
             } catch (err) {
               Alert.alert('Error', 'Gagal menghapus data: ' + err.message);
             } finally {
@@ -480,26 +484,18 @@ export default function UserBurialFormScreen({navigation, route}) {
           placeholderTextColor="#a3a9b7"
         />
 
-        <Text style={styles.label}>Tanggal Lahir Jenazah * (DD-MM-YYYY)</Text>
-        <TextInput
-          style={styles.input}
+        <DatePickerField
+          label="Tanggal Lahir Jenazah *"
           value={tglLahirJenazah}
-          onChangeText={t => formatTanggal(t, setTglLahirJenazah)}
-          placeholder="Contoh: 10-05-1945"
-          placeholderTextColor="#a3a9b7"
-          keyboardType="number-pad"
-          maxLength={10}
+          onChange={setTglLahirJenazah}
+          {...batasKalenderTglLahir()}
         />
 
-        <Text style={styles.label}>Tanggal Wafat * (DD-MM-YYYY)</Text>
-        <TextInput
-          style={styles.input}
+        <DatePickerField
+          label="Tanggal Wafat * (hanya boleh tahun ini)"
           value={tglWafat}
-          onChangeText={t => formatTanggal(t, setTglWafat)}
-          placeholder="Contoh: 05-12-2025"
-          placeholderTextColor="#a3a9b7"
-          keyboardType="number-pad"
-          maxLength={10}
+          onChange={setTglWafat}
+          {...batasKalenderTglWafat()}
         />
 
         <Text style={styles.label}>Penyebab Kematian *</Text>
@@ -561,17 +557,11 @@ export default function UserBurialFormScreen({navigation, route}) {
           placeholderTextColor="#a3a9b7"
         />
 
-        <Text style={styles.label}>
-          Tanggal Lahir Ahli Waris * (DD-MM-YYYY)
-        </Text>
-        <TextInput
-          style={styles.input}
+        <DatePickerField
+          label="Tanggal Lahir Ahli Waris *"
           value={tglLahirWaris}
-          onChangeText={t => formatTanggal(t, setTglLahirWaris)}
-          placeholder="Contoh: 10-05-2021"
-          placeholderTextColor="#a3a9b7"
-          keyboardType="number-pad"
-          maxLength={10}
+          onChange={setTglLahirWaris}
+          {...batasKalenderTglLahir()}
         />
         <Text style={styles.label}>Alamat *</Text>
         <TextInput
@@ -593,15 +583,11 @@ export default function UserBurialFormScreen({navigation, route}) {
           <Text style={styles.cardTitle}>Data Pemakaman</Text>
         </View>
 
-        <Text style={styles.label}>Tanggal Pemakaman * (DD-MM-YYYY)</Text>
-        <TextInput
-          style={styles.input}
+        <DatePickerField
+          label={`Tanggal Pemakaman * (maks. ${MAKS_HARI_PEMAKAMAN_SETELAH_WAFAT} hari setelah wafat)`}
           value={burialDate}
-          onChangeText={t => formatTanggal(t, setBurialDate)}
-          placeholder="Contoh: 06-12-2025"
-          placeholderTextColor="#a3a9b7"
-          keyboardType="number-pad"
-          maxLength={10}
+          onChange={setBurialDate}
+          {...batasKalenderBurialDate(tglWafat)}
         />
 
         <Text style={styles.label}>Catatan (opsional)</Text>
