@@ -93,10 +93,10 @@ export default function Data({navigation}) {
     if (activeTab === 'burials') {
       return (
         <View style={styles.docRow}>
-          <MiniDoc url={item.dokKTP} label="KTP" />
-          <MiniDoc url={item.dokKK} label="KK" />
-          <MiniDoc url={item.dokSuratKematian} label="Srt Kematian" />
-          <MiniDoc url={item.dokSuratMedis} label="Srt Medis" />
+          <MiniDoc url={item.dokKTP} label="KTP Waris" />
+          <MiniDoc url={item.dokKK} label="KK Waris" />
+          <MiniDoc url={item.dokKTPJenazah} label="KTP Jnz" />
+          <MiniDoc url={item.dokKKJenazah} label="KK Jnz" />
         </View>
       );
     }
@@ -111,8 +111,10 @@ export default function Data({navigation}) {
     // tumpangan
     return (
       <View style={styles.docRow}>
-        <MiniDoc url={item.dokKTP} label="KTP" />
-        <MiniDoc url={item.dokKK} label="KK" />
+        <MiniDoc url={item.dokKTP} label="KTP Waris" />
+        <MiniDoc url={item.dokKK} label="KK Waris" />
+        <MiniDoc url={item.dokKTPJenazah} label="KTP Jnz" />
+        <MiniDoc url={item.dokKKJenazah} label="KK Jnz" />
         <MiniDoc url={item.dokIPTMLama} label="IPTM Lama" />
       </View>
     );

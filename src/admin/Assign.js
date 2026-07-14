@@ -232,8 +232,10 @@ export default function Assign({route, navigation}) {
           </Text>
           {/* Grid 2 kolom */}
           <View style={styles.docGrid}>
-            <DocCard label="KTP" url={data.dokKTP} />
-            <DocCard label="KK" url={data.dokKK} />
+            <DocCard label="KTP Ahli Waris" url={data.dokKTP} />
+            <DocCard label="KK Ahli Waris" url={data.dokKK} />
+            <DocCard label="KTP Jenazah" url={data.dokKTPJenazah} />
+            <DocCard label="KK Jenazah" url={data.dokKKJenazah} />
             <DocCard label="Akte" url={data.dokAkte} />
             <DocCard label="Surat Kematian" url={data.dokSuratKematian} />
             <DocCard label="Surat Medis" url={data.dokSuratMedis} />

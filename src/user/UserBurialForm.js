@@ -82,6 +82,8 @@ export default function UserBurialFormScreen({navigation, route}) {
   // ── State: Dokumen (bisa berupa object baru {uri,name,type} ATAU string URL lama) ──
   const [dokKTP, setDokKTP] = useState(null);
   const [dokKK, setDokKK] = useState(null);
+  const [dokKTPJenazah, setDokKTPJenazah] = useState(null);
+  const [dokKKJenazah, setDokKKJenazah] = useState(null);
   const [dokAkte, setDokAkte] = useState(null);
   const [dokSuratKematian, setDokSuratKematian] = useState(null);
   const [dokSuratMedis, setDokSuratMedis] = useState(null);
@@ -124,6 +126,8 @@ export default function UserBurialFormScreen({navigation, route}) {
       setNotes(d.notes || '');
       setDokKTP(d.dokKTP || null);
       setDokKK(d.dokKK || null);
+      setDokKTPJenazah(d.dokKTPJenazah || null);
+      setDokKKJenazah(d.dokKKJenazah || null);
       setDokAkte(d.dokAkte || null);
       setDokSuratKematian(d.dokSuratKematian || null);
       setDokSuratMedis(d.dokSuratMedis || null);
@@ -247,14 +251,23 @@ export default function UserBurialFormScreen({navigation, route}) {
       setLoading(true);
 
       setUploadProgress('Mengupload dokumen...');
-      const [urlKTP, urlKK, urlAkte, urlSuratKematian, urlSuratMedis] =
-        await Promise.all([
-          uploadToCloudinary(dokKTP, 'ktp'),
-          uploadToCloudinary(dokKK, 'kk'),
-          uploadToCloudinary(dokAkte, 'akte'),
-          uploadToCloudinary(dokSuratKematian, 'surat_kematian'),
-          uploadToCloudinary(dokSuratMedis, 'surat_medis'),
-        ]);
+      const [
+        urlKTP,
+        urlKK,
+        urlKTPJenazah,
+        urlKKJenazah,
+        urlAkte,
+        urlSuratKematian,
+        urlSuratMedis,
+      ] = await Promise.all([
+        uploadToCloudinary(dokKTP, 'ktp'),
+        uploadToCloudinary(dokKK, 'kk'),
+        uploadToCloudinary(dokKTPJenazah, 'ktp_jenazah'),
+        uploadToCloudinary(dokKKJenazah, 'kk_jenazah'),
+        uploadToCloudinary(dokAkte, 'akte'),
+        uploadToCloudinary(dokSuratKematian, 'surat_kematian'),
+        uploadToCloudinary(dokSuratMedis, 'surat_medis'),
+      ]);
 
       const payload = {
         deceasedName: deceasedName.trim(),
@@ -278,6 +291,8 @@ export default function UserBurialFormScreen({navigation, route}) {
 
         dokKTP: urlKTP || null,
         dokKK: urlKK || null,
+        dokKTPJenazah: urlKTPJenazah || null,
+        dokKKJenazah: urlKKJenazah || null,
         dokAkte: urlAkte || null,
         dokSuratKematian: urlSuratKematian || null,
         dokSuratMedis: urlSuratMedis || null,
@@ -616,8 +631,22 @@ export default function UserBurialFormScreen({navigation, route}) {
         <Text style={styles.label}>KTP Ahli Waris</Text>
         <DocBtn label="KTP" file={dokKTP} onPress={() => pickDoc(setDokKTP)} />
 
-        <Text style={styles.label}>Kartu Keluarga (KK)</Text>
+        <Text style={styles.label}>Kartu Keluarga (KK) Ahli Waris</Text>
         <DocBtn label="KK" file={dokKK} onPress={() => pickDoc(setDokKK)} />
+
+        <Text style={styles.label}>KTP Jenazah</Text>
+        <DocBtn
+          label="KTP Jenazah"
+          file={dokKTPJenazah}
+          onPress={() => pickDoc(setDokKTPJenazah)}
+        />
+
+        <Text style={styles.label}>Kartu Keluarga (KK) Jenazah</Text>
+        <DocBtn
+          label="KK Jenazah"
+          file={dokKKJenazah}
+          onPress={() => pickDoc(setDokKKJenazah)}
+        />
 
         <Text style={styles.label}>Akte</Text>
         <DocBtn

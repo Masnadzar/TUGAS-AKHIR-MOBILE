@@ -135,8 +135,10 @@ const KONFIG_JENIS = {
       },
     ],
     dokumen: [
-      {key: 'dokKTP', label: 'KTP', folder: 'ktp'},
-      {key: 'dokKK', label: 'KK', folder: 'kk'},
+      {key: 'dokKTP', label: 'KTP Ahli Waris', folder: 'ktp'},
+      {key: 'dokKK', label: 'KK Ahli Waris / Ahli Kubur', folder: 'kk'},
+      {key: 'dokKTPJenazah', label: 'KTP Jenazah', folder: 'ktp_jenazah'},
+      {key: 'dokKKJenazah', label: 'KK Jenazah', folder: 'kk_jenazah'},
       {key: 'dokAkte', label: 'Akte', folder: 'Akte'},
       {
         key: 'dokSuratKematian',
@@ -290,7 +292,21 @@ const KONFIG_JENIS = {
     ],
     dokumen: [
       {key: 'dokKTP', label: 'KTP Ahli Waris', folder: 'ktp_tumpangan'},
-      {key: 'dokKK', label: 'Kartu Keluarga (KK)', folder: 'kk_tumpangan'},
+      {
+        key: 'dokKK',
+        label: 'Kartu Keluarga (KK) Ahli Waris',
+        folder: 'kk_tumpangan',
+      },
+      {
+        key: 'dokKTPJenazah',
+        label: 'KTP Jenazah',
+        folder: 'ktp_jenazah_tumpangan',
+      },
+      {
+        key: 'dokKKJenazah',
+        label: 'KK Jenazah',
+        folder: 'kk_jenazah_tumpangan',
+      },
       {key: 'dokAkte', label: 'Akte', folder: 'akte_tumpangan'},
       {
         key: 'dokSuratKematian',

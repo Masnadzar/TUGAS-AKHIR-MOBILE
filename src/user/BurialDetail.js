@@ -1,10 +1,3 @@
-// src/screens/BurialDetailScreen.js
-// Disamakan dengan pola PengajuanDetail.js: header + status card + CRUD
-// (edit & hapus, hanya jika status === 'pending'), tapi tetap mendukung
-// upload & preview foto dokumen (KTP, KK, Akte, Surat Kematian, Surat Medis)
-// seperti versi BurialDetailScreen sebelumnya, supaya user bisa melihat
-// semua data + foto yang sudah diinput.
-
 import React, {useEffect, useState} from 'react';
 import {
   SafeAreaView,
@@ -95,8 +88,10 @@ const warnaBadge = status => {
 
 // ── Daftar dokumen yang didukung ─────────────────────────────────────
 const DOKUMEN_LIST = [
-  {key: 'dokKTP', label: 'KTP', folder: 'ktp'},
-  {key: 'dokKK', label: 'KK', folder: 'kk'},
+  {key: 'dokKTP', label: 'KTP Ahli Waris', folder: 'ktp'},
+  {key: 'dokKK', label: 'KK Ahli Waris / Ahli Kubur', folder: 'kk'},
+  {key: 'dokKTPJenazah', label: 'KTP Jenazah', folder: 'ktp_jenazah'},
+  {key: 'dokKKJenazah', label: 'KK Jenazah', folder: 'kk_jenazah'},
   {key: 'dokAkte', label: 'Akte', folder: 'Akte'},
   {key: 'dokSuratKematian', label: 'Surat Kematian', folder: 'surat_kematian'},
   {key: 'dokSuratMedis', label: 'Surat Medis', folder: 'surat_medis'},

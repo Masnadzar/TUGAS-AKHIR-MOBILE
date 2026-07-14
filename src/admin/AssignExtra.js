@@ -1,19 +1,3 @@
-// src/admin/AssignExtra.js
-// Layar verifikasi admin untuk collection 'perpanjangan' dan 'tumpangan'.
-// Sama seperti Assign.js (untuk 'burials'), tapi bisa dipakai untuk 2 collection
-// sekaligus lewat route.params.collection ('perpanjangan' | 'tumpangan').
-//
-// BARU:
-// - Dokumen yang tampil disamakan dengan yang benar-benar diupload user:
-//   perpanjangan kini menampilkan juga "KK Ahli Waris" (dokKKWaris),
-//   tumpangan kini menampilkan juga "Surat Medis" (dokSuratMedis).
-// - Untuk collection 'perpanjangan': admin punya 2 pilihan jelas --
-//   "Perpanjang" (masa sewa otomatis +3 tahun dari hari ini, sesuai
-//   MASA_SEWA_TAHUN) atau "Tidak Diperpanjang" (status jadi 'rejected').
-//   Saat diperpanjang, jatuh tempo baru dihitung otomatis & ditampilkan
-//   sebelum admin konfirmasi, lalu disimpan ke dokumen perpanjangan DAN
-//   disinkronkan ke dokumen 'burials' asal supaya jatuh tempo selalu
-//   sinkron di kedua tempat.
 import React, {useEffect, useState} from 'react';
 import {
   View,
@@ -83,8 +67,10 @@ const CONFIG = {
       {label: 'Catatan Pemohon', field: 'notes'},
     ],
     docFields: [
-      {label: 'KTP', field: 'dokKTP'},
-      {label: 'KK', field: 'dokKK'},
+      {label: 'KTP Ahli Waris', field: 'dokKTP'},
+      {label: 'KK Ahli Waris', field: 'dokKK'},
+      {label: 'KTP Jenazah', field: 'dokKTPJenazah'},
+      {label: 'KK Jenazah', field: 'dokKKJenazah'},
       {label: 'Akte', field: 'dokAkte'},
       {label: 'Surat Kematian', field: 'dokSuratKematian'},
       {label: 'Surat Medis', field: 'dokSuratMedis'},
