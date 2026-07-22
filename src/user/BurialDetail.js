@@ -78,7 +78,7 @@ const formatTglLengkap = val => {
 const warnaBadge = status => {
   switch (status) {
     case 'verified':
-      return {bg: C.hijau, label: 'Diverifikasi'};
+      return {bg: C.hijau, label: 'Diterima'};
     case 'rejected':
       return {bg: C.merah, label: 'Ditolak'};
     default:
@@ -92,7 +92,6 @@ const DOKUMEN_LIST = [
   {key: 'dokKK', label: 'KK Ahli Waris / Ahli Kubur', folder: 'kk'},
   {key: 'dokKTPJenazah', label: 'KTP Jenazah', folder: 'ktp_jenazah'},
   {key: 'dokKKJenazah', label: 'KK Jenazah', folder: 'kk_jenazah'},
-  {key: 'dokAkte', label: 'Akte', folder: 'Akte'},
   {key: 'dokSuratKematian', label: 'Surat Kematian', folder: 'surat_kematian'},
   {key: 'dokSuratMedis', label: 'Surat Medis', folder: 'surat_medis'},
 ];
@@ -541,7 +540,7 @@ export default function BurialDetailScreen({route, navigation}) {
                 />
                 <Text style={styles.peringatanTeks}>
                   {data.status === 'verified'
-                    ? 'Data ini sudah diverifikasi dan tidak dapat diubah.'
+                    ? 'Data ini sudah diterima dan tidak dapat diubah.'
                     : data.status === 'rejected'
                     ? 'Data ini sudah ditolak dan tidak dapat diubah.'
                     : 'Anda tidak memiliki akses untuk mengubah data ini.'}
@@ -698,7 +697,7 @@ export default function BurialDetailScreen({route, navigation}) {
               </>
             )}
 
-            {data.assignedBlock ? (
+            {data.status === 'verified' && data.assignedBlock ? (
               <>
                 <View style={styles.divider} />
                 <Text style={styles.lokasiHeader}>
@@ -709,7 +708,15 @@ export default function BurialDetailScreen({route, navigation}) {
                   label="Nomor Makam"
                   value={data.assignedGraveNumber}
                 />
-                <InfoBaris label="Catatan Admin" value={data.adminNote} />
+                <InfoBaris label="Keterangan" value={data.adminNote || '-'} />
+              </>
+            ) : null}
+
+            {data.status === 'rejected' ? (
+              <>
+                <View style={styles.divider} />
+                <Text style={styles.lokasiHeader}>Alasan Penolakan</Text>
+                <InfoBaris label="Keterangan" value={data.adminNote || '-'} />
               </>
             ) : null}
           </View>

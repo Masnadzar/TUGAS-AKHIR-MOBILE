@@ -102,7 +102,6 @@ export default function TumpanganFormScreen({route, navigation}) {
   const [dokKK, setDokKK] = useState(null);
   const [dokKTPJenazah, setDokKTPJenazah] = useState(null);
   const [dokKKJenazah, setDokKKJenazah] = useState(null);
-  const [dokAkte, setDokAkte] = useState(null);
   const [dokSuratKematian, setDokSuratKematian] = useState(null);
   const [dokSuratMedis, setDokSuratMedis] = useState(null); // ← BARU: surat medis
   const [dokIPTMLama, setDokIPTMLama] = useState(null); // ← khusus tumpangan
@@ -225,7 +224,6 @@ export default function TumpanganFormScreen({route, navigation}) {
         urlKK,
         urlKTPJenazah,
         urlKKJenazah,
-        urlAkte,
         urlSuratKematian,
         urlSuratMedis,
         urlIPTMLama,
@@ -234,7 +232,6 @@ export default function TumpanganFormScreen({route, navigation}) {
         uploadToCloudinary(dokKK, 'kk_tumpangan'),
         uploadToCloudinary(dokKTPJenazah, 'ktp_jenazah_tumpangan'),
         uploadToCloudinary(dokKKJenazah, 'kk_jenazah_tumpangan'),
-        uploadToCloudinary(dokAkte, 'akte_tumpangan'),
         uploadToCloudinary(dokSuratKematian, 'surat_kematian_tumpangan'),
         uploadToCloudinary(dokSuratMedis, 'surat_medis_tumpangan'),
         uploadToCloudinary(dokIPTMLama, 'iptm_tumpangan'),
@@ -270,7 +267,6 @@ export default function TumpanganFormScreen({route, navigation}) {
           dokKK: urlKK || null,
           dokKTPJenazah: urlKTPJenazah || null,
           dokKKJenazah: urlKKJenazah || null,
-          dokAkte: urlAkte || null,
           dokSuratKematian: urlSuratKematian || null,
           dokSuratMedis: urlSuratMedis || null,
           dokIPTMLama: urlIPTMLama || null,
@@ -431,12 +427,6 @@ export default function TumpanganFormScreen({route, navigation}) {
           label="KK Jenazah"
           file={dokKKJenazah}
           onPress={() => pickDoc(setDokKKJenazah)}
-        />
-        <Text style={styles.label}>Akte</Text>
-        <DocBtn
-          label="Akte"
-          file={dokAkte}
-          onPress={() => pickDoc(setDokAkte)}
         />
         <Text style={styles.label}>Surat Kematian</Text>
         <DocBtn

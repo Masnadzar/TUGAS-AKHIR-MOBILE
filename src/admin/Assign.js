@@ -109,6 +109,13 @@ export default function Assign({route, navigation}) {
 
   // ── Tolak ───────────────────────────────────────────────────────
   const handleReject = () => {
+    if (!adminNote.trim()) {
+      Alert.alert(
+        'Validasi',
+        'Keterangan/alasan wajib diisi sebelum menolak pengajuan ini.',
+      );
+      return;
+    }
     Alert.alert('Tolak', 'Tandai entri ini sebagai ditolak?', [
       {text: 'Batal', style: 'cancel'},
       {
@@ -121,6 +128,7 @@ export default function Assign({route, navigation}) {
             .set(
               {
                 status: 'rejected',
+                adminNote: adminNote.trim(),
                 verifiedBy: auth().currentUser?.uid || null,
                 verifiedAt: firestore.FieldValue.serverTimestamp(),
               },
@@ -182,7 +190,7 @@ export default function Assign({route, navigation}) {
   // ── Status config ───────────────────────────────────────────────
   const sc = {
     pending: {bg: '#fff3cd', txt: '#856404', label: '⏳ PENDING'},
-    verified: {bg: '#d4edda', txt: '#155724', label: '✅ TERVERIFIKASI'},
+    verified: {bg: '#d4edda', txt: '#155724', label: '✅ DITERIMA'},
     rejected: {bg: '#f8d7da', txt: '#721c24', label: '❌ DITOLAK'},
   }[data.status] || {bg: '#eee', txt: '#333', label: data.status};
 
@@ -236,7 +244,6 @@ export default function Assign({route, navigation}) {
             <DocCard label="KK Ahli Waris" url={data.dokKK} />
             <DocCard label="KTP Jenazah" url={data.dokKTPJenazah} />
             <DocCard label="KK Jenazah" url={data.dokKKJenazah} />
-            <DocCard label="Akte" url={data.dokAkte} />
             <DocCard label="Surat Kematian" url={data.dokSuratKematian} />
             <DocCard label="Surat Medis" url={data.dokSuratMedis} />
           </View>
@@ -264,12 +271,14 @@ export default function Assign({route, navigation}) {
               keyboardType="number-pad"
             />
 
-            <Text style={styles.inputLabel}>Catatan / Patokan Lokasi</Text>
+            <Text style={styles.inputLabel}>
+              Keterangan (Catatan Lokasi jika diterima / Alasan jika ditolak) *
+            </Text>
             <TextInput
               style={[styles.input, {height: 75, textAlignVertical: 'top'}]}
               value={adminNote}
               onChangeText={setAdminNote}
-              placeholder="Contoh: Baris ke-3 dari kiri, dekat pohon"
+              placeholder="Contoh: Baris ke-3 dari kiri, dekat pohon / Berkas tidak sesuai"
               multiline
             />
 
@@ -280,7 +289,7 @@ export default function Assign({route, navigation}) {
               {saving ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.btnTxt}>✅ Verifikasi & Simpan</Text>
+                <Text style={styles.btnTxt}>✅ Terima & Simpan</Text>
               )}
             </TouchableOpacity>
 
@@ -301,11 +310,11 @@ export default function Assign({route, navigation}) {
                 fontWeight: 'bold',
                 textAlign: 'center',
               }}>
-              ✅ Sudah diverifikasi
+              ✅ Pengajuan telah diterima
             </Text>
             <Row label="Block" value={data.assignedBlock} />
             <Row label="Nomor Makam" value={data.assignedGraveNumber} />
-            <Row label="Catatan" value={data.adminNote || '-'} />
+            <Row label="Keterangan" value={data.adminNote || '-'} />
           </View>
         )}
 
@@ -317,8 +326,9 @@ export default function Assign({route, navigation}) {
                 fontWeight: 'bold',
                 textAlign: 'center',
               }}>
-              ❌ Entri ini telah ditolak
+              ❌ Pengajuan ini telah ditolak
             </Text>
+            <Row label="Keterangan" value={data.adminNote || '-'} />
           </View>
         )}
       </ScrollView>

@@ -71,7 +71,6 @@ const CONFIG = {
       {label: 'KK Ahli Waris', field: 'dokKK'},
       {label: 'KTP Jenazah', field: 'dokKTPJenazah'},
       {label: 'KK Jenazah', field: 'dokKKJenazah'},
-      {label: 'Akte', field: 'dokAkte'},
       {label: 'Surat Kematian', field: 'dokSuratKematian'},
       {label: 'Surat Medis', field: 'dokSuratMedis'},
       {label: 'IPTM Lama', field: 'dokIPTMLama'},
@@ -209,6 +208,13 @@ export default function AssignExtra({route, navigation}) {
   };
 
   const handleReject = () => {
+    if (!adminNote.trim()) {
+      Alert.alert(
+        'Validasi',
+        'Keterangan/alasan wajib diisi sebelum menolak pengajuan ini.',
+      );
+      return;
+    }
     Alert.alert(
       isPerpanjangan ? 'Tidak Diperpanjang' : 'Tolak',
       isPerpanjangan
@@ -289,7 +295,7 @@ export default function AssignExtra({route, navigation}) {
     verified: {
       bg: '#d4edda',
       txt: '#155724',
-      label: isPerpanjangan ? '✅ DIPERPANJANG' : '✅ TERVERIFIKASI',
+      label: isPerpanjangan ? '✅ DIPERPANJANG' : '✅ DITERIMA',
     },
     rejected: {
       bg: '#f8d7da',
@@ -375,12 +381,14 @@ export default function AssignExtra({route, navigation}) {
               keyboardType="number-pad"
             />
 
-            <Text style={styles.inputLabel}>Catatan / Patokan Lokasi</Text>
+            <Text style={styles.inputLabel}>
+              Keterangan (Catatan Lokasi jika diterima / Alasan jika ditolak) *
+            </Text>
             <TextInput
               style={[styles.input, {height: 75, textAlignVertical: 'top'}]}
               value={adminNote}
               onChangeText={setAdminNote}
-              placeholder="Contoh: Baris ke-3 dari kiri, dekat pohon"
+              placeholder="Contoh: Baris ke-3 dari kiri, dekat pohon / Berkas tidak sesuai"
               multiline
             />
 
@@ -403,7 +411,7 @@ export default function AssignExtra({route, navigation}) {
                 <Text style={styles.btnTxt}>
                   {isPerpanjangan
                     ? '✅ Perpanjang & Simpan'
-                    : '✅ Verifikasi & Simpan'}
+                    : '✅ Terima & Simpan'}
                 </Text>
               )}
             </TouchableOpacity>
@@ -429,14 +437,14 @@ export default function AssignExtra({route, navigation}) {
               }}>
               {isPerpanjangan
                 ? `✅ Sewa telah diperpanjang ${MASA_SEWA_TAHUN} tahun`
-                : '✅ Sudah diverifikasi'}
+                : '✅ Pengajuan telah diterima'}
             </Text>
             <Row label="Blok Makam" value={data.assignedBlockBaru} />
             <Row label="Nomor Makam" value={data.assignedGraveNumberBaru} />
             {isPerpanjangan && (
               <Row label="Jatuh Tempo Baru" value={data.jatuhTempoBaru} />
             )}
-            <Row label="Catatan" value={data.adminNote || '-'} />
+            <Row label="Keterangan" value={data.adminNote || '-'} />
           </View>
         )}
 
@@ -450,11 +458,9 @@ export default function AssignExtra({route, navigation}) {
               }}>
               {isPerpanjangan
                 ? '❌ Pengajuan perpanjangan ini tidak disetujui'
-                : '❌ Entri ini telah ditolak'}
+                : '❌ Pengajuan ini telah ditolak'}
             </Text>
-            {data.adminNote ? (
-              <Row label="Catatan" value={data.adminNote} />
-            ) : null}
+            <Row label="Keterangan" value={data.adminNote || '-'} />
           </View>
         )}
       </ScrollView>

@@ -84,7 +84,6 @@ export default function UserBurialFormScreen({navigation, route}) {
   const [dokKK, setDokKK] = useState(null);
   const [dokKTPJenazah, setDokKTPJenazah] = useState(null);
   const [dokKKJenazah, setDokKKJenazah] = useState(null);
-  const [dokAkte, setDokAkte] = useState(null);
   const [dokSuratKematian, setDokSuratKematian] = useState(null);
   const [dokSuratMedis, setDokSuratMedis] = useState(null);
 
@@ -128,7 +127,6 @@ export default function UserBurialFormScreen({navigation, route}) {
       setDokKK(d.dokKK || null);
       setDokKTPJenazah(d.dokKTPJenazah || null);
       setDokKKJenazah(d.dokKKJenazah || null);
-      setDokAkte(d.dokAkte || null);
       setDokSuratKematian(d.dokSuratKematian || null);
       setDokSuratMedis(d.dokSuratMedis || null);
       setStatus(d.status || 'pending');
@@ -230,7 +228,6 @@ export default function UserBurialFormScreen({navigation, route}) {
     setNotes('');
     setDokKTP(null);
     setDokKK(null);
-    setDokAkte(null);
     setDokSuratKematian(null);
     setDokSuratMedis(null);
   };
@@ -256,7 +253,6 @@ export default function UserBurialFormScreen({navigation, route}) {
         urlKK,
         urlKTPJenazah,
         urlKKJenazah,
-        urlAkte,
         urlSuratKematian,
         urlSuratMedis,
       ] = await Promise.all([
@@ -264,7 +260,6 @@ export default function UserBurialFormScreen({navigation, route}) {
         uploadToCloudinary(dokKK, 'kk'),
         uploadToCloudinary(dokKTPJenazah, 'ktp_jenazah'),
         uploadToCloudinary(dokKKJenazah, 'kk_jenazah'),
-        uploadToCloudinary(dokAkte, 'akte'),
         uploadToCloudinary(dokSuratKematian, 'surat_kematian'),
         uploadToCloudinary(dokSuratMedis, 'surat_medis'),
       ]);
@@ -293,7 +288,6 @@ export default function UserBurialFormScreen({navigation, route}) {
         dokKK: urlKK || null,
         dokKTPJenazah: urlKTPJenazah || null,
         dokKKJenazah: urlKKJenazah || null,
-        dokAkte: urlAkte || null,
         dokSuratKematian: urlSuratKematian || null,
         dokSuratMedis: urlSuratMedis || null,
       };
@@ -646,13 +640,6 @@ export default function UserBurialFormScreen({navigation, route}) {
           label="KK Jenazah"
           file={dokKKJenazah}
           onPress={() => pickDoc(setDokKKJenazah)}
-        />
-
-        <Text style={styles.label}>Akte</Text>
-        <DocBtn
-          label="Akte"
-          file={dokAkte}
-          onPress={() => pickDoc(setDokAkte)}
         />
 
         <Text style={styles.label}>Surat Kematian</Text>

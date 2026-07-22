@@ -139,7 +139,6 @@ const KONFIG_JENIS = {
       {key: 'dokKK', label: 'KK Ahli Waris / Ahli Kubur', folder: 'kk'},
       {key: 'dokKTPJenazah', label: 'KTP Jenazah', folder: 'ktp_jenazah'},
       {key: 'dokKKJenazah', label: 'KK Jenazah', folder: 'kk_jenazah'},
-      {key: 'dokAkte', label: 'Akte', folder: 'Akte'},
       {
         key: 'dokSuratKematian',
         label: 'Surat Kematian',
@@ -307,7 +306,6 @@ const KONFIG_JENIS = {
         label: 'KK Jenazah',
         folder: 'kk_jenazah_tumpangan',
       },
-      {key: 'dokAkte', label: 'Akte', folder: 'akte_tumpangan'},
       {
         key: 'dokSuratKematian',
         label: 'Surat Kematian',
@@ -346,7 +344,7 @@ const formatTglLengkap = val => {
 const warnaBadge = status => {
   switch (status) {
     case 'verified':
-      return {bg: C.hijau, label: 'Diverifikasi'};
+      return {bg: C.hijau, label: 'Diterima'};
     case 'rejected':
       return {bg: C.merah, label: 'Ditolak'};
     default:
@@ -872,18 +870,22 @@ export default function PengajuanDetailScreen({route, navigation}) {
                 label="No. Makam"
                 value={data.assignedGraveNumberBaru || data.assignedGraveNumber}
               />
-              <InfoBaris label="Catatan Admin" value={data.adminNote} />
+              <InfoBaris label="Keterangan" value={data.adminNote || '-'} />
               <InfoBaris
-                label="Diverifikasi"
+                label="Tanggal Diterima"
                 value={formatTglLengkap(data.verifiedAt)}
               />
             </View>
           )}
 
-          {data.status === 'rejected' && data.adminNote && (
+          {data.status === 'rejected' && (
             <View style={styles.sectionCard}>
               <Text style={styles.sectionJudul}>Alasan Penolakan</Text>
-              <InfoBaris label="Catatan Admin" value={data.adminNote} />
+              <InfoBaris label="Keterangan" value={data.adminNote || '-'} />
+              <InfoBaris
+                label="Tanggal Ditolak"
+                value={formatTglLengkap(data.verifiedAt)}
+              />
             </View>
           )}
 

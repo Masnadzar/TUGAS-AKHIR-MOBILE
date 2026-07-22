@@ -76,7 +76,7 @@ const formatTgl = val => {
 const warnaBadge = status => {
   switch (status) {
     case 'verified':
-      return {bg: C.hijau, label: 'Diverifikasi'};
+      return {bg: C.hijau, label: 'Diterima'};
     case 'rejected':
       return {bg: C.merah, label: 'Ditolak'};
     default:
